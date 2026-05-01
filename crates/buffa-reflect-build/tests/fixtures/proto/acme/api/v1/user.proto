@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package acme.api.v1;
+
+// A user account.
+message User {
+  string id = 1;
+  string display_name = 2;
+  Role role = 3;
+  map<string, string> labels = 4;
+
+  // Inline contact info.
+  oneof contact {
+    string email = 5;
+    string phone = 6;
+  }
+
+  // proto3 optional → synthetic oneof.
+  optional string nickname = 7;
+
+  // Nested type, exercises the message_name longest-wins case.
+  message Profile {
+    string bio = 1;
+    repeated string interests = 2;
+  }
+  Profile profile = 8;
+
+  repeated int32 scores = 9;
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_ADMIN = 1;
+  ROLE_USER = 2;
+}
