@@ -1,0 +1,6 @@
+[submodule "vendors/prost-reflect"]
+	path = vendors/prost-reflect
+	url = https://github.com/andrewhickman/prost-reflect.git
+[submodule "vendors/buffa"]
+	path = vendors/buffa
+	url = https://github.com/anthropics/buffa.git
