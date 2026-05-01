@@ -51,15 +51,15 @@ fn expand(input: &DeriveInput) -> Result<TokenStream2, Error> {
         (None, None) => {
             return Err(Error::new_spanned(
                 input,
-                "missing `#[buffa_reflect(...)]` binding: provide either \
-                 `descriptor_pool = \"...\"` or `file_descriptor_set_bytes = \"...\"`",
+                "missing `#[buffa_reflect(...)]` binding: provide either `descriptor_pool = \
+                 \"...\"` or `file_descriptor_set_bytes = \"...\"`",
             ));
         }
         (Some(_), Some(_)) => {
             return Err(Error::new_spanned(
                 input,
-                "conflicting `#[buffa_reflect(...)]` bindings: \
-                 provide exactly one of `descriptor_pool` / `file_descriptor_set_bytes`",
+                "conflicting `#[buffa_reflect(...)]` bindings: provide exactly one of \
+                 `descriptor_pool` / `file_descriptor_set_bytes`",
             ));
         }
         (Some(pool), None) => {

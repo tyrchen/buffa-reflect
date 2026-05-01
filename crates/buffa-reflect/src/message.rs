@@ -2,10 +2,12 @@
 
 use buffa_descriptor::generated::descriptor::DescriptorProto;
 
-use crate::field::FieldDescriptor;
-use crate::file::FileDescriptor;
-use crate::oneof::OneofDescriptor;
-use crate::pool::{DescriptorPool, MessageIndex};
+use crate::{
+    field::FieldDescriptor,
+    file::FileDescriptor,
+    oneof::OneofDescriptor,
+    pool::{DescriptorPool, MessageIndex},
+};
 
 /// Handle to one message in a [`DescriptorPool`].
 #[derive(Clone, Debug)]

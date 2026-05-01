@@ -11,8 +11,7 @@
     reason = "build-script integration tests run synchronously."
 )]
 
-use std::path::PathBuf;
-use std::process::Command;
+use std::{path::PathBuf, process::Command};
 
 fn protoc_available() -> bool {
     Command::new("protoc")

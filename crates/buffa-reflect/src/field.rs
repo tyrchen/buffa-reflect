@@ -2,10 +2,12 @@
 
 use buffa_descriptor::generated::descriptor::FieldDescriptorProto;
 
-use crate::enumeration::EnumDescriptor;
-use crate::message::MessageDescriptor;
-use crate::oneof::OneofDescriptor;
-use crate::pool::{DescriptorPool, KindRef, MessageIndex};
+use crate::{
+    enumeration::EnumDescriptor,
+    message::MessageDescriptor,
+    oneof::OneofDescriptor,
+    pool::{DescriptorPool, KindRef, MessageIndex},
+};
 
 /// Handle to one field in a [`MessageDescriptor`].
 #[derive(Clone, Debug)]

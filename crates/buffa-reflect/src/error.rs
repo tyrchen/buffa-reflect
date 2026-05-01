@@ -40,7 +40,8 @@ pub enum DescriptorError {
     /// A field declared a number outside the protobuf-permitted range or
     /// inside the reserved internal range.
     #[error(
-        "invalid field number {number} in `{message}`: must be in 1..={max} and outside 19000..=19999"
+        "invalid field number {number} in `{message}`: must be in 1..={max} and outside \
+         19000..=19999"
     )]
     InvalidFieldNumber {
         /// Fully-qualified message name owning the field.
@@ -59,7 +60,8 @@ pub enum DescriptorError {
         field: String,
     },
 
-    /// `FieldDescriptorProto.type` was [`MESSAGE`](buffa_descriptor::generated::descriptor::field_descriptor_proto::Type)
+    /// `FieldDescriptorProto.type` was
+    /// [`MESSAGE`](buffa_descriptor::generated::descriptor::field_descriptor_proto::Type)
     /// or `GROUP`/`ENUM` but `type_name` was empty.
     #[error("field `{field}` has type {kind:?} but no `type_name`")]
     MissingTypeName {

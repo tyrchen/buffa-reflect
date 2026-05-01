@@ -2,9 +2,11 @@
 
 use buffa_descriptor::generated::descriptor::OneofDescriptorProto;
 
-use crate::field::FieldDescriptor;
-use crate::message::MessageDescriptor;
-use crate::pool::{DescriptorPool, MessageIndex};
+use crate::{
+    field::FieldDescriptor,
+    message::MessageDescriptor,
+    pool::{DescriptorPool, MessageIndex},
+};
 
 /// Handle to one oneof declaration in a [`MessageDescriptor`].
 #[derive(Clone, Debug)]

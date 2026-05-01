@@ -1,12 +1,13 @@
 //! Integration tests for the `#[derive(ReflectMessage)]` macro.
 
+use std::sync::LazyLock;
+
 use buffa::{DecodeError, DefaultInstance, Message, SizeCache, encoding::Tag};
-use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
 use buffa_descriptor::generated::descriptor::{
     DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    field_descriptor_proto::{Label, Type},
 };
 use buffa_reflect::{DescriptorPool, ReflectMessage};
-use std::sync::LazyLock;
 
 // ── synthetic generated message (mirrors what buffa codegen would emit) ──
 

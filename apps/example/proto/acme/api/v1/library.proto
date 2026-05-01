@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package acme.api.v1;
+
+// A library of books with mixed metadata.
+message Library {
+  string name = 1;
+  repeated Book books = 2;
+  map<string, string> tags = 3;
+
+  // Nested type — exercises the nested-message reflection path.
+  message Book {
+    string id = 1;
+    string title = 2;
+    repeated string authors = 3;
+    Genre genre = 4;
+
+    // Inline price/availability variant.
+    oneof availability {
+      uint32 in_stock = 5;
+      string out_of_stock_reason = 6;
+    }
+
+    // proto3 optional → synthetic oneof.
+    optional string isbn = 7;
+
+    // Nested-nested.
+    message Excerpt {
+      uint32 page = 1;
+      string text = 2;
+    }
+    repeated Excerpt excerpts = 8;
+  }
+}
+
+enum Genre {
+  GENRE_UNSPECIFIED = 0;
+  GENRE_FICTION = 1;
+  GENRE_NONFICTION = 2;
+  GENRE_REFERENCE = 3;
+}

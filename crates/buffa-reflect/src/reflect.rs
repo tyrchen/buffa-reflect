@@ -15,7 +15,6 @@ pub trait ReflectMessage: ::buffa::Message {
     /// The pool the descriptor lives in is set up by the
     /// `#[derive(ReflectMessage)]` macro, either:
     /// * the user-supplied `descriptor_pool` expression, or
-    /// * a lazily-decoded pool keyed off the embedded
-    ///   `file_descriptor_set_bytes`.
+    /// * a lazily-decoded pool keyed off the embedded `file_descriptor_set_bytes`.
     fn descriptor(&self) -> MessageDescriptor;
 }

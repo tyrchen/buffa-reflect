@@ -1,8 +1,10 @@
 //! Builder API and implementation for `buffa-reflect-build`.
 
-use std::ffi::OsString;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use buffa::Message as _;
 use buffa_descriptor::generated::descriptor::{DescriptorProto, FileDescriptorSet};
@@ -86,23 +88,23 @@ pub enum Error {
     /// Neither [`Builder::descriptor_pool`] nor
     /// [`Builder::file_descriptor_set_bytes`] was supplied.
     #[error(
-        "buffa-reflect-build: descriptor binding not configured — call \
-         `.descriptor_pool(..)` or `.file_descriptor_set_bytes(..)`"
+        "buffa-reflect-build: descriptor binding not configured — call `.descriptor_pool(..)` or \
+         `.file_descriptor_set_bytes(..)`"
     )]
     MissingDescriptorBinding,
 
     /// Both bindings were supplied; the macro accepts at most one.
     #[error(
-        "buffa-reflect-build: cannot set both `descriptor_pool` and \
-         `file_descriptor_set_bytes` — pick one"
+        "buffa-reflect-build: cannot set both `descriptor_pool` and `file_descriptor_set_bytes` — \
+         pick one"
     )]
     ConflictingDescriptorBindings,
 
     /// `OUT_DIR` was not set by cargo and no explicit
     /// [`Builder::out_dir`] was given.
     #[error(
-        "buffa-reflect-build: OUT_DIR is not set and no out_dir() was \
-         configured (run from build.rs or call .out_dir())"
+        "buffa-reflect-build: OUT_DIR is not set and no out_dir() was configured (run from \
+         build.rs or call .out_dir())"
     )]
     MissingOutDir,
 

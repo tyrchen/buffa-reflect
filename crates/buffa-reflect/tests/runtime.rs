@@ -5,10 +5,10 @@
 //! and validation paths.
 
 use buffa::Message as _;
-use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
 use buffa_descriptor::generated::descriptor::{
     DescriptorProto, EnumDescriptorProto, EnumValueDescriptorProto, FieldDescriptorProto,
     FileDescriptorProto, FileDescriptorSet, MessageOptions, OneofDescriptorProto,
+    field_descriptor_proto::{Label, Type},
 };
 use buffa_reflect::{Cardinality, DescriptorError, DescriptorPool, Kind};
 

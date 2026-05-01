@@ -4,10 +4,9 @@
 //!
 //! * emits `OUT_DIR/file_descriptor_set.bin` (a wire-compatible
 //!   `google.protobuf.FileDescriptorSet`),
-//! * decorates every generated message struct with
-//!   `#[derive(::buffa_reflect::ReflectMessage)]` and a
-//!   `#[buffa_reflect(...)]` attribute that wires it back to either a
-//!   user-supplied descriptor pool or the embedded descriptor bytes.
+//! * decorates every generated message struct with `#[derive(::buffa_reflect::ReflectMessage)]` and
+//!   a `#[buffa_reflect(...)]` attribute that wires it back to either a user-supplied descriptor
+//!   pool or the embedded descriptor bytes.
 //!
 //! See the crate-level `Builder` type for the full surface.
 //!
@@ -22,8 +21,8 @@
 #![allow(
     clippy::disallowed_types,
     clippy::disallowed_methods,
-    reason = "build scripts and codegen run synchronously; pulling in a tokio \
-              runtime here would burden every downstream build.rs."
+    reason = "build scripts and codegen run synchronously; pulling in a tokio runtime here would \
+              burden every downstream build.rs."
 )]
 
 mod builder;

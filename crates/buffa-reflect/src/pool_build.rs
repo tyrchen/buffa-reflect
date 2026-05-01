@@ -2,17 +2,19 @@
 //! message and enum, then resolve every field's `type_name` against the
 //! finished name table.
 
-use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
 use buffa_descriptor::generated::descriptor::{
     DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
     FileDescriptorSet, OneofDescriptorProto,
+    field_descriptor_proto::{Label, Type},
 };
 
-use crate::error::DescriptorError;
-use crate::field::Cardinality;
-use crate::pool::{
-    Definition, EnumEntry, EnumIndex, EnumValueEntry, FieldEntry, FileEntry, FileIndex, KindRef,
-    MessageEntry, MessageIndex, OneofEntry, PoolInner,
+use crate::{
+    error::DescriptorError,
+    field::Cardinality,
+    pool::{
+        Definition, EnumEntry, EnumIndex, EnumValueEntry, FieldEntry, FileEntry, FileIndex,
+        KindRef, MessageEntry, MessageIndex, OneofEntry, PoolInner,
+    },
 };
 
 /// Largest legal protobuf field number.

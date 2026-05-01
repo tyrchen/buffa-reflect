@@ -1,0 +1,23 @@
+[package]
+name = "buffa-reflect-example"
+description = "End-to-end example demonstrating buffa-reflect from build.rs through main.rs."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+publish = false
+
+[dependencies]
+buffa.workspace = true
+buffa-reflect.workspace = true
+
+[build-dependencies]
+buffa-reflect-build.workspace = true
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"

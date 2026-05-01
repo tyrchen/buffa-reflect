@@ -38,16 +38,18 @@ pub mod pool;
 mod pool_build;
 pub mod reflect;
 
-pub use crate::enumeration::{EnumDescriptor, EnumValueDescriptor};
-pub use crate::error::DescriptorError;
-pub use crate::field::{Cardinality, FieldDescriptor, Kind};
-pub use crate::file::FileDescriptor;
-pub use crate::message::MessageDescriptor;
-pub use crate::oneof::OneofDescriptor;
-pub use crate::pool::DescriptorPool;
-pub use crate::reflect::ReflectMessage;
-
 // Derive macros and traits live in separate namespaces, so the macro can
 // share the trait's name and users write a single `#[derive(ReflectMessage)]`.
 #[cfg(feature = "derive")]
 pub use buffa_reflect_derive::ReflectMessage;
+
+pub use crate::{
+    enumeration::{EnumDescriptor, EnumValueDescriptor},
+    error::DescriptorError,
+    field::{Cardinality, FieldDescriptor, Kind},
+    file::FileDescriptor,
+    message::MessageDescriptor,
+    oneof::OneofDescriptor,
+    pool::DescriptorPool,
+    reflect::ReflectMessage,
+};

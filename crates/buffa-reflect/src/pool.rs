@@ -5,10 +5,10 @@ use std::sync::Arc;
 use buffa::Message as _;
 use buffa_descriptor::generated::descriptor::FileDescriptorSet;
 
-use crate::enumeration::EnumDescriptor;
-use crate::error::DescriptorError;
-use crate::file::FileDescriptor;
-use crate::message::MessageDescriptor;
+use crate::{
+    enumeration::EnumDescriptor, error::DescriptorError, file::FileDescriptor,
+    message::MessageDescriptor,
+};
 
 /// Index into [`PoolInner::messages`].
 pub(crate) type MessageIndex = u32;

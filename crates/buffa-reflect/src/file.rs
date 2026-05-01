@@ -2,9 +2,11 @@
 
 use buffa_descriptor::generated::descriptor::FileDescriptorProto;
 
-use crate::enumeration::EnumDescriptor;
-use crate::message::MessageDescriptor;
-use crate::pool::{DescriptorPool, FileIndex};
+use crate::{
+    enumeration::EnumDescriptor,
+    message::MessageDescriptor,
+    pool::{DescriptorPool, FileIndex},
+};
 
 /// Handle to a single proto file inside a [`DescriptorPool`].
 #[derive(Clone, Debug)]

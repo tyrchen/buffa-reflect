@@ -2,9 +2,11 @@
 
 use buffa_descriptor::generated::descriptor::EnumDescriptorProto;
 
-use crate::file::FileDescriptor;
-use crate::message::MessageDescriptor;
-use crate::pool::{DescriptorPool, EnumIndex};
+use crate::{
+    file::FileDescriptor,
+    message::MessageDescriptor,
+    pool::{DescriptorPool, EnumIndex},
+};
 
 /// Handle to one enum declaration in a [`DescriptorPool`].
 #[derive(Clone, Debug)]
