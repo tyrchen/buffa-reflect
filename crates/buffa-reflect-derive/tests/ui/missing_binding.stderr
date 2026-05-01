@@ -1,0 +1,6 @@
+error: missing `#[buffa_reflect(...)]` binding: provide either `descriptor_pool = "..."` or `file_descriptor_set_bytes = "..."`
+ --> tests/ui/missing_binding.rs:4:1
+  |
+4 | / #[buffa_reflect(message_name = "acme.api.v1.User")]
+5 | | struct User;
+  | |____________^

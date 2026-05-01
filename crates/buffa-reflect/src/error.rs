@@ -37,6 +37,17 @@ pub enum DescriptorError {
     #[error("duplicate type definition: `{0}`")]
     DuplicateType(String),
 
+    /// Two `FileDescriptorProto`s carry the same `name`.
+    #[error("duplicate file descriptor: `{0}`")]
+    DuplicateFile(String),
+
+    /// proto3 forbids `LABEL_REQUIRED`. The descriptor declared one anyway.
+    #[error("field `{field}` uses `required` in a proto3 file")]
+    Proto3RequiredField {
+        /// Fully-qualified field name.
+        field: String,
+    },
+
     /// A field declared a number outside the protobuf-permitted range or
     /// inside the reserved internal range.
     #[error(

@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package acme.equiv.v1;
+
+// Top-level message exercising:
+//  * every scalar wire type
+//  * map<K, V>
+//  * proto3 optional (synthetic oneof)
+//  * a real oneof
+//  * enum (top-level + nested)
+//  * deeply nested messages
+//  * repeated message field
+//  * imported message reference (cross-file, see neighbors.proto)
+import "acme/equiv/v1/neighbors.proto";
+
+message Zoo {
+  string name = 1;
+  bytes blob = 2;
+  bool open = 3;
+  double rating = 4;
+  float pricing = 5;
+  int32 capacity = 6;
+  int64 founded_unix = 7;
+  uint32 staff_count = 8;
+  uint64 visitors_lifetime = 9;
+  sint32 budget_delta = 10;
+  sint64 budget_delta64 = 11;
+  fixed32 ticket_id = 12;
+  fixed64 ticket_id64 = 13;
+  sfixed32 lat_micro = 14;
+  sfixed64 lon_micro = 15;
+
+  Continent continent = 16;
+  acme.equiv.v1.NeighboringCity city = 17;
+
+  repeated Animal animals = 20;
+  map<string, string> tags = 21;
+  map<int32, Animal> animals_by_id = 22;
+
+  optional string nickname = 23;
+
+  oneof contact {
+    string email = 30;
+    string phone = 31;
+    Inquiries inquiries = 32;
+  }
+
+  message Inquiries {
+    string url = 1;
+    repeated string topics = 2;
+  }
+
+  message Animal {
+    string id = 1;
+    string species = 2;
+    Diet diet = 3;
+    Habitat habitat = 4;
+
+    // Doubly-nested message.
+    message Sighting {
+      string observer = 1;
+      uint32 day = 2;
+      bytes notes = 3;
+    }
+    repeated Sighting sightings = 5;
+
+    enum Diet {
+      DIET_UNSPECIFIED = 0;
+      DIET_HERBIVORE = 1;
+      DIET_CARNIVORE = 2;
+      DIET_OMNIVORE = 3;
+    }
+
+    enum Habitat {
+      HABITAT_UNSPECIFIED = 0;
+      HABITAT_AQUATIC = 1;
+      HABITAT_TERRESTRIAL = 2;
+      HABITAT_AERIAL = 3;
+    }
+  }
+}
+
+enum Continent {
+  CONTINENT_UNSPECIFIED = 0;
+  CONTINENT_AFRICA = 1;
+  CONTINENT_ANTARCTICA = 2;
+  CONTINENT_ASIA = 3;
+  CONTINENT_AUSTRALIA = 4;
+  CONTINENT_EUROPE = 5;
+  CONTINENT_NORTH_AMERICA = 6;
+  CONTINENT_SOUTH_AMERICA = 7;
+}

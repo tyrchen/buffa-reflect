@@ -37,7 +37,7 @@ pub(crate) fn ingest_file_descriptor_set(
             .clone()
             .ok_or(DescriptorError::MissingFileName)?;
         if pool.file_names.contains_key(file_name.as_str()) {
-            return Err(DescriptorError::DuplicateType(file_name));
+            return Err(DescriptorError::DuplicateFile(file_name));
         }
 
         let package = file_proto.package.as_deref().unwrap_or("").to_string();
@@ -417,6 +417,14 @@ fn build_field_entry(
         Some(Label::LABEL_REPEATED) => Cardinality::Repeated,
     };
 
+    // proto3 forbids `LABEL_REQUIRED`. Editions explicitly allow it via
+    // `field_presence = LEGACY_REQUIRED`, so we only enforce in proto3.
+    if matches!(cardinality, Cardinality::Required) && syntax == "proto3" {
+        return Err(DescriptorError::Proto3RequiredField {
+            field: full_name.clone(),
+        });
+    }
+
     let kind = resolve_kind(pool, file_proto, message_full_name, &full_name, proto)?;
 
     let oneof_index = proto.oneof_index.map(|i| i as u32);
@@ -622,12 +630,13 @@ pub(crate) fn resolve_message_proto<'a>(
     file: &'a FileDescriptorProto,
     path: &[u32],
 ) -> &'a DescriptorProto {
-    let mut iter = path.iter();
-    let first = *iter
-        .next()
-        .expect("message proto path must have at least one component");
-    let mut cur = &file.message_type[first as usize];
-    for step in iter {
+    // `path` is always non-empty by construction in `register_message`
+    // (the call site pushes the top-level index before recursing). We
+    // express that here by indexing rather than `expect`, since a panic
+    // from `[0]` carries the same meaning without a stringly-typed
+    // assertion.
+    let mut cur = &file.message_type[path[0] as usize];
+    for step in &path[1..] {
         cur = &cur.nested_type[*step as usize];
     }
     cur

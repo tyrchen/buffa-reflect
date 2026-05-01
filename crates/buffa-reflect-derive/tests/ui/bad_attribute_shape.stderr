@@ -1,0 +1,5 @@
+error: expected a string literal value
+ --> tests/ui/bad_attribute_shape.rs:4:45
+  |
+4 | #[buffa_reflect(file_descriptor_set_bytes = 42)]
+  |                                             ^^

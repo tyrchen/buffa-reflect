@@ -1,0 +1,8 @@
+error: conflicting `#[buffa_reflect(...)]` bindings: provide exactly one of `descriptor_pool` / `file_descriptor_set_bytes`
+ --> tests/ui/both_bindings.rs:4:1
+  |
+4 | / #[buffa_reflect(descriptor_pool = "crate::POOL")]
+5 | | #[buffa_reflect(file_descriptor_set_bytes = "crate::FDS")]
+6 | | #[buffa_reflect(message_name = "acme.api.v1.User")]
+7 | | struct User;
+  | |____________^

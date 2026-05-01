@@ -16,7 +16,6 @@ readme.workspace = true
 buffa.workspace = true
 buffa-build.workspace = true
 buffa-descriptor.workspace = true
-tempfile.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

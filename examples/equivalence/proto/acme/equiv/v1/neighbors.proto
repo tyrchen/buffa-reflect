@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package acme.equiv.v1;
+
+// Lives in a separate file so the equivalence test exercises cross-file
+// `type_name` resolution.
+message NeighboringCity {
+  string name = 1;
+  uint32 population = 2;
+  Region region = 3;
+
+  enum Region {
+    REGION_UNSPECIFIED = 0;
+    REGION_NORTH = 1;
+    REGION_EAST = 2;
+    REGION_SOUTH = 3;
+    REGION_WEST = 4;
+  }
+}

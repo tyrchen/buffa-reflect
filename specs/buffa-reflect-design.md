@@ -467,32 +467,39 @@ That's the entire trait in Phase 1. `transcode_to_dynamic` and friends arrive in
 
 ### 5.4 Errors
 
-```rust
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum DescriptorError {
-    #[error("failed to decode FileDescriptorSet bytes: {0}")]
-    Decode(#[from] buffa::DecodeError),
-    #[error("file `{0}` referenced an unknown import `{1}`")]
-    UnknownImport(String, String),
-    #[error("type `{0}` is referenced but not defined in the descriptor set")]
-    UnresolvedType(String),
-    #[error("duplicate type definition: `{0}`")]
-    DuplicateType(String),
-    #[error("invalid field number {number} in `{message}`: must be in 1..={max}")]
-    InvalidFieldNumber { message: String, number: i32, max: u32 },
-    #[error("descriptor validation: {0}")]
-    Validation(String),
-}
-```
+`DescriptorError` is `#[non_exhaustive]`. Phase 1 ships these variants
+(see `crates/buffa-reflect/src/error.rs` for the canonical declaration —
+reproduced here as a sketch, not a syntactic spec):
+
+- `Decode(#[from] buffa::DecodeError)` — wire-level decode failure.
+- `MissingFileName` — a `FileDescriptorProto.name` was unset.
+- `MissingName { location: String }` — a nested message / enum / field /
+  oneof had no `name`.
+- `UnresolvedType { field: String, type_name: String }` — a field's
+  `type_name` does not resolve in the pool. (Struct variant rather than
+  the tuple shape an earlier draft suggested; the extra context is needed
+  for actionable error messages.)
+- `DuplicateType(String)` — two types share the same FQN.
+- `DuplicateFile(String)` — two `FileDescriptorProto`s share the same
+  `name`.
+- `InvalidFieldNumber { message, number, max }` — out-of-range or
+  reserved-range field number.
+- `MissingFieldType` / `MissingTypeName { kind }` — `type_name` and
+  `type` are inconsistently set on a field.
+- `InvalidOneofIndex { field, index, count }` — a `oneof_index` exceeds
+  the message's `oneof_decl` count.
+- `Proto3EnumMissingZero(String)` — proto3 enum has no `0` variant.
+- `Proto3RequiredField { field: String }` — proto3 disallows `required`.
+- `Validation(String)` — generic catch-all for invariants that don't
+  warrant their own variant yet.
 
 ### 5.5 Validation done at pool build time
 
 We mirror prost-reflect's contract:
 
 - name resolution (`type_name` lookups produce a resolved index, with cross-file imports honored);
-- field number range `1..=536_870_911`, reserved `19_000..=20_000` rejected;
-- duplicate FQN detection;
+- field number range `1..=536_870_911`, reserved `19_000..=19_999` rejected (matches `protoc`'s `kFirstReservedNumber`/`kLastReservedNumber`);
+- duplicate FQN detection (per file *and* across files);
 - enum default-value resolves to a declared variant;
 - proto3-syntactic rules (no required fields; enum-zero present) — only when `syntax == "proto3"`. In editions, defer to descriptor-supplied features without re-checking.
 

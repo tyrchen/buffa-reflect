@@ -133,6 +133,17 @@ pub enum Error {
     #[error("buffa-reflect-build: failed to decode FileDescriptorSet: {0}")]
     DecodeFileDescriptorSet(#[source] buffa::DecodeError),
 
+    /// `Buf` mode resolves imports through `buf.yaml`/`buf.work.yaml` and
+    /// has no use for `protoc`-style `.includes(..)`. Configuring both is
+    /// almost always a bug, so we error rather than silently dropping the
+    /// include list.
+    #[error(
+        "buffa-reflect-build: .includes(..) is not supported in `use_buf` mode \
+         (buf reads import paths from buf.yaml); drop the includes() call or \
+         switch to the protoc source"
+    )]
+    BufWithIncludes,
+
     /// `buffa-build` reported an error.
     ///
     /// `buffa-build`'s `compile()` returns a `Box<dyn Error>` (without
@@ -345,6 +356,10 @@ impl Builder {
             (false, false) => return Err(Error::MissingDescriptorBinding),
             (true, true) => return Err(Error::ConflictingDescriptorBindings),
             _ => {}
+        }
+
+        if matches!(self.descriptor_source, DescriptorSource::Buf) && !self.includes.is_empty() {
+            return Err(Error::BufWithIncludes);
         }
 
         let out_dir = self

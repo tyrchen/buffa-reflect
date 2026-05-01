@@ -1,0 +1,6 @@
+error: missing `#[buffa_reflect(message_name = "...")]` attribute
+ --> tests/ui/missing_message_name.rs:4:1
+  |
+4 | / #[buffa_reflect(file_descriptor_set_bytes = "crate::FDS")]
+5 | | struct User;
+  | |____________^

@@ -307,6 +307,36 @@ fn test_should_reject_invalid_field_number() {
 }
 
 #[test]
+fn test_should_reject_proto3_required_field() {
+    let mut file = build_user_file();
+    file.message_type[0].field.push(field(
+        "must_have",
+        80,
+        Type::TYPE_STRING,
+        Label::LABEL_REQUIRED,
+        None,
+    ));
+    let err = DescriptorPool::from_file_descriptor_set(FileDescriptorSet {
+        file: vec![file],
+        ..Default::default()
+    })
+    .expect_err("proto3 disallows required");
+    assert!(matches!(err, DescriptorError::Proto3RequiredField { .. }));
+}
+
+#[test]
+fn test_should_reject_duplicate_file() {
+    let file = build_user_file();
+    let dup = file.clone();
+    let err = DescriptorPool::from_file_descriptor_set(FileDescriptorSet {
+        file: vec![file, dup],
+        ..Default::default()
+    })
+    .expect_err("duplicate file must error");
+    assert!(matches!(err, DescriptorError::DuplicateFile(_)));
+}
+
+#[test]
 fn test_should_reject_proto3_enum_without_zero() {
     let bad = EnumDescriptorProto {
         name: Some("Bad".to_string()),

@@ -1,0 +1,23 @@
+[package]
+name = "buffa-reflect-equivalence"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "Validates that buffa-reflect parses FileDescriptorSet bytes the same way prost-reflect does."
+
+# Empty `[workspace]` makes this a leaf workspace, so `cargo` does NOT
+# treat it as a member of the parent buffa-reflect workspace. Keeps prost
+# / prost-reflect / prost-types out of the parent Cargo.lock.
+[workspace]
+
+[dependencies]
+buffa = "0.4"
+buffa-reflect = { path = "../../crates/buffa-reflect" }
+prost = "0.14"
+prost-reflect = "0.16"
+tempfile = "3"
+
+[[bin]]
+name = "equivalence"
+path = "src/main.rs"

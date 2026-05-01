@@ -127,6 +127,44 @@ fn test_should_compile_via_precompiled_descriptor_set() {
 }
 
 #[test]
+fn test_descriptor_set_matches_raw_protoc_output() {
+    if !protoc_available() {
+        eprintln!("protoc not on PATH; skipping");
+        return;
+    }
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let out_dir = tmp.path().to_path_buf();
+
+    // Run our Builder once.
+    buffa_reflect_build::Builder::new()
+        .file_descriptor_set_bytes("crate::FILE_DESCRIPTOR_SET_BYTES")
+        .files(&[fixture_dir().join("acme/api/v1/user.proto")])
+        .includes(&[fixture_dir()])
+        .out_dir(&out_dir)
+        .compile()
+        .expect("compile");
+    let our_bytes = std::fs::read(out_dir.join("file_descriptor_set.bin")).unwrap();
+
+    // Run raw protoc with the same flags.
+    let raw_path = tmp.path().join("raw.binpb");
+    let status = Command::new("protoc")
+        .arg("--include_imports")
+        .arg("--include_source_info")
+        .arg(format!("--descriptor_set_out={}", raw_path.display()))
+        .arg(format!("--proto_path={}", fixture_dir().display()))
+        .arg(fixture_dir().join("acme/api/v1/user.proto"))
+        .status()
+        .expect("protoc spawn");
+    assert!(status.success(), "raw protoc failed");
+    let raw_bytes = std::fs::read(&raw_path).unwrap();
+
+    assert_eq!(
+        our_bytes, raw_bytes,
+        "buffa-reflect-build's FDS bytes diverge from `protoc --descriptor_set_out`"
+    );
+}
+
+#[test]
 fn test_descriptor_set_round_trips_through_buffa_reflect() {
     if !protoc_available() {
         eprintln!("protoc not on PATH; skipping test");

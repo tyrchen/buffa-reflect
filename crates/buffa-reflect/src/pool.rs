@@ -178,6 +178,20 @@ pub(crate) struct EnumValueEntry {
     pub(crate) number: i32,
 }
 
+// Static guarantee that the public handle types are usable across thread
+// boundaries — same property prost-reflect's docs promise. A future
+// refactor that swapped `Arc` for `Rc` would fail to compile here rather
+// than silently regress the API.
+const _: fn() = || {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<DescriptorPool>();
+    assert_send_sync::<crate::message::MessageDescriptor>();
+    assert_send_sync::<crate::field::FieldDescriptor>();
+    assert_send_sync::<crate::enumeration::EnumDescriptor>();
+    assert_send_sync::<crate::oneof::OneofDescriptor>();
+    assert_send_sync::<crate::file::FileDescriptor>();
+};
+
 impl DescriptorPool {
     /// Construct an empty pool.
     #[must_use]
