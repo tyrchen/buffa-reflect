@@ -1,0 +1,27 @@
+[package]
+name = "buffa-reflect-build"
+description = "Build-script integration that drives buffa-build and decorates generated code for reflection."
+categories = ["development-tools::build-utils"]
+keywords = ["protobuf", "reflection", "buffa", "build"]
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+
+[dependencies]
+buffa.workspace = true
+buffa-build.workspace = true
+buffa-descriptor.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"

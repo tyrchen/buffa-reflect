@@ -1,23 +1,39 @@
 [workspace]
-members = ["crates/*", "apps/*"]
+members = ["crates/*"]
 resolver = "3"
 
 [workspace.package]
 version = "0.1.0"
-authors = ["Your Name <YourName@yourdomain.com>"]
+authors = ["Tyr Chen <tyr.chen@gmail.com>"]
 edition = "2024"
 license = "MIT"
-documentation = "https://docs.rs/"
-repository = "https://github.com/TODO"
-homepage = "https://github.com/TODO"
+documentation = "https://docs.rs/buffa-reflect"
+repository = "https://github.com/tyrchen/buffa-reflect"
+homepage = "https://github.com/tyrchen/buffa-reflect"
 readme = "README.md"
 
 [workspace.dependencies]
+# external
 anyhow = "1.0.98"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.142"
+hashbrown = { version = "0.17", default-features = false, features = [
+  "default-hasher",
+] }
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
+tempfile = "3"
 thiserror = "2.0.12"
 tokio = { version = "1.47.1", features = ["rt", "rt-multi-thread", "macros"] }
+trybuild = "1"
 
-# workspace crates
-buffa-reflect-core = { path = "crates/core" }
+# buffa from crates.io (vendors/ is reference-only)
+buffa = { version = "0.4", default-features = false, features = ["std"] }
+buffa-build = { version = "0.4" }
+buffa-codegen = { version = "0.4" }
+buffa-descriptor = { version = "0.4" }
+buffa-types = { version = "0.4" }
+
+# this workspace
+buffa-reflect = { path = "crates/buffa-reflect" }
+buffa-reflect-build = { path = "crates/buffa-reflect-build" }
+buffa-reflect-derive = { path = "crates/buffa-reflect-derive" }
