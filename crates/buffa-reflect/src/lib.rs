@@ -62,5 +62,5 @@ pub use crate::{
     message::MessageDescriptor,
     oneof::OneofDescriptor,
     pool::DescriptorPool,
-    reflect::ReflectMessage,
+    reflect::{ReflectMessage, ReflectMessageView},
 };

@@ -16,13 +16,15 @@
               code, not generated code."
 )]
 
-use buffa_reflect::{Kind, ReflectMessage};
+use buffa_reflect::{Kind, ReflectMessage, ReflectMessageView};
 
 /// Embedded descriptor-set bytes, populated by `buffa-reflect-build`.
 pub const FILE_DESCRIPTOR_SET_BYTES: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/file_descriptor_set.bin"));
 
 buffa::include_proto!("acme.api.v1");
+
+include!(concat!(env!("OUT_DIR"), "/_reflect_views.rs"));
 
 fn main() {
     // Construct a deeply-nested generated message.
@@ -53,6 +55,26 @@ fn main() {
     // Nested-nested type.
     let excerpt = library::book::Excerpt::default();
     print_descriptor("Excerpt", excerpt.descriptor());
+
+    // View-type reflection: decode the library message as a view and
+    // walk its descriptor without ever owning the data.
+    let bytes = ::buffa::Message::encode_to_vec(&library);
+    let view: __buffa::view::LibraryView<'_> = ::buffa::DecodeOptions::new()
+        .decode_view(bytes.as_slice())
+        .expect("library decodes as view");
+    let view_descriptor = view.descriptor();
+    println!("== Library (via view): {} ==", view_descriptor.full_name());
+    // Both descriptors describe the same proto message; they may live
+    // in distinct pool clones (one per static OnceLock site) but their
+    // FQNs and field counts are identical.
+    assert_eq!(
+        view_descriptor.full_name(),
+        library.descriptor().full_name()
+    );
+    assert_eq!(
+        view_descriptor.fields().count(),
+        library.descriptor().fields().count()
+    );
 }
 
 fn print_descriptor(label: &str, descriptor: buffa_reflect::MessageDescriptor) {

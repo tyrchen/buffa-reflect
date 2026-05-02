@@ -41,6 +41,17 @@ pub trait ReflectMessage: ::buffa::Message {
     }
 }
 
+/// Reflection over a buffa view type. Implemented by every generated
+/// `*View<'a>` so the zero-copy decode path can introspect the
+/// message without allocating an owned form.
+///
+/// `descriptor()` returns the same [`MessageDescriptor`] the owned
+/// [`ReflectMessage`] returns for the same proto.
+pub trait ReflectMessageView<'a>: ::buffa::view::MessageView<'a> {
+    /// Resolve the [`MessageDescriptor`] for this view's proto type.
+    fn descriptor(&self) -> MessageDescriptor;
+}
+
 // `DynamicMessage` is intentionally not a [`ReflectMessage`]: the
 // supertrait bound (`buffa::Message`) requires a static
 // `DefaultInstance` keyed by Rust type, which a runtime-typed
