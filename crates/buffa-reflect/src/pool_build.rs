@@ -431,6 +431,9 @@ fn build_field_entry(
     let supports_presence = compute_supports_presence(syntax, &cardinality, &kind, proto);
     let is_packed = compute_is_packed(syntax, &cardinality, &kind, proto);
 
+    #[cfg(feature = "dynamic")]
+    let parsed_default = parse_default_for_field(pool, &full_name, &cardinality, &kind, proto)?;
+
     Ok(FieldEntry {
         name: name.into_boxed_str(),
         full_name: full_name.into_boxed_str(),
@@ -442,7 +445,40 @@ fn build_field_entry(
         is_packed,
         oneof_index,
         proto_field_index,
+        #[cfg(feature = "dynamic")]
+        parsed_default,
     })
+}
+
+#[cfg(feature = "dynamic")]
+fn parse_default_for_field(
+    pool: &PoolInner,
+    field_full_name: &str,
+    cardinality: &Cardinality,
+    kind: &KindRef,
+    proto: &FieldDescriptorProto,
+) -> Result<Option<crate::dynamic::Value>, DescriptorError> {
+    let raw = match proto.default_value.as_deref() {
+        Some(s) => s,
+        None => return Ok(None),
+    };
+    if matches!(cardinality, Cardinality::Repeated) {
+        // The descriptor format allows repeated fields to declare a
+        // (single) default; we ignore it for repeated semantics.
+        return Ok(None);
+    }
+    let enum_entry = if let KindRef::Enum(idx) = kind {
+        Some(&pool.enums[*idx as usize])
+    } else {
+        None
+    };
+    crate::dynamic::defaults::parse_default_value(raw, kind, enum_entry)
+        .map(Some)
+        .map_err(|message| DescriptorError::InvalidDefaultValue {
+            field: field_full_name.to_string(),
+            value: raw.to_string(),
+            message,
+        })
 }
 
 fn compute_supports_presence(

@@ -138,9 +138,8 @@ pub enum Error {
     /// almost always a bug, so we error rather than silently dropping the
     /// include list.
     #[error(
-        "buffa-reflect-build: .includes(..) is not supported in `use_buf` mode \
-         (buf reads import paths from buf.yaml); drop the includes() call or \
-         switch to the protoc source"
+        "buffa-reflect-build: .includes(..) is not supported in `use_buf` mode (buf reads import \
+         paths from buf.yaml); drop the includes() call or switch to the protoc source"
     )]
     BufWithIncludes,
 

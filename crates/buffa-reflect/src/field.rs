@@ -96,6 +96,50 @@ impl FieldDescriptor {
         self.entry().is_packed
     }
 
+    /// True iff this field's [`Kind`] admits packed encoding (scalar or
+    /// enum) — independent of whether `is_packed()` is currently set.
+    #[must_use]
+    pub fn is_packable(&self) -> bool {
+        matches!(
+            self.entry().kind,
+            KindRef::Double
+                | KindRef::Float
+                | KindRef::Int32
+                | KindRef::Int64
+                | KindRef::Uint32
+                | KindRef::Uint64
+                | KindRef::Sint32
+                | KindRef::Sint64
+                | KindRef::Fixed32
+                | KindRef::Fixed64
+                | KindRef::Sfixed32
+                | KindRef::Sfixed64
+                | KindRef::Bool
+                | KindRef::Enum(_)
+        )
+    }
+
+    /// True iff this is a `repeated` (non-map) field.
+    ///
+    /// Note that `map<K, V>` fields are technically also repeated on
+    /// the wire, but their value model is [`Value::Map`], not
+    /// [`Value::List`] — this helper returns `false` for maps.
+    #[must_use]
+    pub fn is_list(&self) -> bool {
+        matches!(self.entry().cardinality, Cardinality::Repeated) && !self.is_map()
+    }
+
+    /// Pre-parsed `[default = ...]` value, if the field carried one.
+    ///
+    /// Available for any scalar / enum / string / bytes field whose
+    /// proto declared an explicit default. `None` for proto3 fields,
+    /// for repeated fields, and for fields without an explicit default.
+    #[cfg(feature = "dynamic")]
+    #[must_use]
+    pub fn parsed_default_value(&self) -> Option<crate::dynamic::Value> {
+        self.entry().parsed_default.clone()
+    }
+
     /// True iff this field models a `map<K, V>`.
     ///
     /// A field is a map iff its kind is a message that carries the

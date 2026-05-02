@@ -99,6 +99,18 @@ pub enum DescriptorError {
     #[error("proto3 enum `{0}` is missing the required value-0 variant")]
     Proto3EnumMissingZero(String),
 
+    /// `FieldDescriptorProto.default_value` could not be parsed against
+    /// the field's resolved kind.
+    #[error("invalid default value for field `{field}`: `{value}` ({message})")]
+    InvalidDefaultValue {
+        /// Fully-qualified field name.
+        field: String,
+        /// The literal string that failed to parse.
+        value: String,
+        /// Parser-level diagnostic.
+        message: String,
+    },
+
     /// Generic descriptor-validation failure.
     #[error("descriptor validation: {0}")]
     Validation(String),

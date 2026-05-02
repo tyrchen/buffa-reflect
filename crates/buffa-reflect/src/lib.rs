@@ -38,11 +38,18 @@ pub mod pool;
 mod pool_build;
 pub mod reflect;
 
+#[cfg(feature = "dynamic")]
+pub mod dynamic;
+
 // Derive macros and traits live in separate namespaces, so the macro can
 // share the trait's name and users write a single `#[derive(ReflectMessage)]`.
 #[cfg(feature = "derive")]
 pub use buffa_reflect_derive::ReflectMessage;
 
+#[cfg(feature = "dynamic")]
+pub use crate::dynamic::{
+    DynamicMessage, MapKey, SetFieldError, UnknownField, UnknownFieldSet, Value,
+};
 pub use crate::{
     enumeration::{EnumDescriptor, EnumValueDescriptor},
     error::DescriptorError,

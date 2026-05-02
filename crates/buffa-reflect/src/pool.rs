@@ -116,6 +116,12 @@ pub(crate) struct FieldEntry {
     /// Position of the descriptor inside the parent's
     /// `DescriptorProto::field` list.
     pub(crate) proto_field_index: u32,
+    /// Pre-parsed `[default = …]` literal, if any. Eagerly parsed at
+    /// pool-build time so malformed defaults surface as
+    /// [`crate::DescriptorError::InvalidDefaultValue`] rather than as
+    /// surprise crashes on first read.
+    #[cfg(feature = "dynamic")]
+    pub(crate) parsed_default: Option<crate::dynamic::Value>,
 }
 
 /// Internal, pool-relative version of [`crate::Kind`]. Avoids storing

@@ -42,12 +42,12 @@ edition = "2024"
 
 [dependencies]
 buffa-reflect = { path = "../../crates/buffa-reflect" }
-tonic = "0.13"
+tonic = "0.14"
 tokio-stream = "0.1"
 prost = "0.14"  # Required by tonic's generated reflection types.
 
 [build-dependencies]
-tonic-build = "0.13"
+tonic-build = "0.14"
 ```
 
 Build script generates the `grpc.reflection.v1.{ServerReflection, ServerReflectionRequest, ...}` types from the official proto file (vendored under `proto/`).
@@ -117,13 +117,13 @@ tonic::transport::Server::builder()
 
 `grpc.reflection.v1.ServerReflectionRequest` is a oneof with these arms; each maps to a small handler:
 
-| Request | Handler |
-| --- | --- |
-| `file_by_filename(string)` | `pool.get_file_by_name(...)` → encode the file's raw `FileDescriptorProto` into `FileDescriptorResponse.file_descriptor_proto`. |
-| `file_containing_symbol(string)` | Resolve symbol via `pool.get_message_by_name(...)`/`get_enum_by_name(...)`/etc.; return its parent file's encoded `FileDescriptorProto`. |
-| `file_containing_extension({type, number})` | Walk extensions in pool; return owning file. (Extensions are read-only via `descriptor_proto()` in Phase 1; sufficient for v1 spec.) |
-| `all_extension_numbers_of_type(string)` | Walk extensions; return all extension numbers extending the named message. |
-| `list_services` | Iterate every `ServiceDescriptor` in the pool; return `ServiceResponse { name }` for each. |
+| Request                                     | Handler                                                                                                                                  |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `file_by_filename(string)`                  | `pool.get_file_by_name(...)` → encode the file's raw `FileDescriptorProto` into `FileDescriptorResponse.file_descriptor_proto`.          |
+| `file_containing_symbol(string)`            | Resolve symbol via `pool.get_message_by_name(...)`/`get_enum_by_name(...)`/etc.; return its parent file's encoded `FileDescriptorProto`. |
+| `file_containing_extension({type, number})` | Walk extensions in pool; return owning file. (Extensions are read-only via `descriptor_proto()` in Phase 1; sufficient for v1 spec.)     |
+| `all_extension_numbers_of_type(string)`     | Walk extensions; return all extension numbers extending the named message.                                                               |
+| `list_services`                             | Iterate every `ServiceDescriptor` in the pool; return `ServiceResponse { name }` for each.                                               |
 
 Streaming request/response: each request gets exactly one response, but the channel stays open so a single connection can issue many requests. Tonic's `streaming` API handles this naturally.
 
@@ -193,12 +193,12 @@ Total: ~4 days.
 
 ## 9. Risks
 
-| Risk | Mitigation |
-| --- | --- |
-| `v1alpha` vs `v1` divergence (the alpha proto has extra response fields some clients depend on). | Implement both side-by-side; share handler logic. |
-| `file_containing_extension` for proto2 requires walking every file's `extension` field. | Pre-index at pool-build time: `extensions_by_extendee: HashMap<MessageIndex, Vec<(FileIndex, FieldIndex)>>`. O(1) at request time. |
-| `tonic` version churn between major releases. | Pin `tonic = "0.13"` (the version when the spec lands); bump on coordinated tonic release. |
-| Generated tonic code emits proto types via `prost`; consumers using `buffa` typed code may now have *both* prost and buffa in their dep tree. | Acceptable for this niche service; the reflection messages themselves are tiny. Document the dep cost. |
+| Risk                                                                                                                                          | Mitigation                                                                                                                         |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `v1alpha` vs `v1` divergence (the alpha proto has extra response fields some clients depend on).                                              | Implement both side-by-side; share handler logic.                                                                                  |
+| `file_containing_extension` for proto2 requires walking every file's `extension` field.                                                       | Pre-index at pool-build time: `extensions_by_extendee: HashMap<MessageIndex, Vec<(FileIndex, FieldIndex)>>`. O(1) at request time. |
+| `tonic` version churn between major releases.                                                                                                 | Pin `tonic = "0.13"` (the version when the spec lands); bump on coordinated tonic release.                                         |
+| Generated tonic code emits proto types via `prost`; consumers using `buffa` typed code may now have *both* prost and buffa in their dep tree. | Acceptable for this niche service; the reflection messages themselves are tiny. Document the dep cost.                             |
 
 ---
 
