@@ -22,7 +22,6 @@ hashbrown = { version = "0.17", default-features = false, features = [
 ] }
 logos = "0.16"
 proc-macro2 = "1"
-prost = "0.14"
 quote = "1"
 serde = { version = "1", features = ["derive"] }
 serde-value = "0.7"
@@ -32,16 +31,12 @@ tempfile = "3"
 thiserror = "2.0.12"
 tokio = { version = "1.47.1", features = ["rt", "rt-multi-thread", "macros"] }
 tokio-stream = "0.1"
-tonic = "0.14"
-tonic-build = "0.14"
 trybuild = "1"
 
 # buffa from crates.io (vendors/ is reference-only)
 buffa = { version = "0.4", default-features = false, features = ["std"] }
 buffa-build = { version = "0.4" }
-buffa-codegen = { version = "0.4" }
 buffa-descriptor = { version = "0.4" }
-buffa-types = { version = "0.4" }
 
 # this workspace
 buffa-reflect = { path = "crates/buffa-reflect" }

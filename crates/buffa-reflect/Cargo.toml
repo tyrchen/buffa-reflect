@@ -16,13 +16,7 @@ readme.workspace = true
 default = ["derive", "dynamic"]
 derive = ["dep:buffa-reflect-derive"]
 dynamic = []
-serde = [
-  "dynamic",
-  "dep:serde",
-  "dep:base64",
-  "dep:serde-value",
-  "dep:chrono",
-]
+serde = ["dynamic", "dep:serde", "dep:base64", "dep:serde-value", "dep:chrono"]
 text-format = ["dynamic", "dep:logos"]
 
 [dependencies]
