@@ -5,16 +5,19 @@
 //! entries with `key:` / `value:`), enum names and numbers, all C-style
 //! escapes inside string/bytes literals, and `# to-EOL` comments.
 
-use std::collections::HashMap;
-use std::fmt;
+use std::{collections::HashMap, fmt};
 
 use buffa::bytes::Bytes;
 use logos::{Lexer, Logos};
 
-use crate::dynamic::message::DynamicMessage;
-use crate::dynamic::value::{MapKey, Value};
-use crate::field::{FieldDescriptor, Kind};
-use crate::message::MessageDescriptor;
+use crate::{
+    dynamic::{
+        message::DynamicMessage,
+        value::{MapKey, Value},
+    },
+    field::{FieldDescriptor, Kind},
+    message::MessageDescriptor,
+};
 
 /// Parse error raised by [`crate::DynamicMessage::parse_text_format`].
 #[derive(Debug)]
@@ -186,7 +189,7 @@ pub(super) fn parse(
         &mut parser,
         &descriptor,
         &mut msg,
-        /*until_brace*/ false,
+        /* until_brace */ false,
     )?;
     Ok(msg)
 }

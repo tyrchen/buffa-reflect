@@ -1,16 +1,17 @@
 //! [`ServiceDescriptor`] and [`MethodDescriptor`] — handles to gRPC
 //! services and their methods.
 //!
-//! Phase 2d add: services + methods are walked at pool-build time and
-//! cached on [`crate::pool::PoolInner`]. Cross-file `input_type` /
-//! `output_type` references resolve through the same name table the
-//! field resolver uses.
+//! Services + methods are walked at pool-build time and cached on the
+//! pool. Cross-file `input_type` / `output_type` references resolve
+//! through the same name table the field resolver uses.
 
 use buffa_descriptor::generated::descriptor::{MethodDescriptorProto, ServiceDescriptorProto};
 
-use crate::file::FileDescriptor;
-use crate::message::MessageDescriptor;
-use crate::pool::{DescriptorPool, FileIndex, MessageIndex};
+use crate::{
+    file::FileDescriptor,
+    message::MessageDescriptor,
+    pool::{DescriptorPool, FileIndex, MessageIndex},
+};
 
 /// Internal index into [`crate::pool::PoolInner::services`].
 pub(crate) type ServiceIndex = u32;

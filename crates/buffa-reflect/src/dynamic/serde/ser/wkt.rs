@@ -6,11 +6,14 @@
 use base64::Engine as _;
 use serde::ser::{Error as _, SerializeMap as _, SerializeSeq as _, Serializer};
 
-use crate::dynamic::message::DynamicMessage;
-use crate::dynamic::serde::SerializeOptions;
-use crate::dynamic::serde::case::snake_to_lower_camel;
-use crate::dynamic::value::Value;
-use crate::field::Kind;
+use crate::{
+    dynamic::{
+        message::DynamicMessage,
+        serde::{SerializeOptions, case::snake_to_lower_camel},
+        value::Value,
+    },
+    field::Kind,
+};
 
 pub(super) fn serialize_wkt<S: Serializer>(
     full_name: &str,

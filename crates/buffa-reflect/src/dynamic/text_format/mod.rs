@@ -6,11 +6,11 @@
 mod format;
 mod parse;
 
-pub use crate::dynamic::text_format::format::FormatOptions;
-pub use crate::dynamic::text_format::parse::{ParseError, ParseErrorKind};
-
-use crate::dynamic::message::DynamicMessage;
-use crate::message::MessageDescriptor;
+pub use crate::dynamic::text_format::{
+    format::FormatOptions,
+    parse::{ParseError, ParseErrorKind},
+};
+use crate::{dynamic::message::DynamicMessage, message::MessageDescriptor};
 
 impl DynamicMessage {
     /// Render as canonical textproto using the default

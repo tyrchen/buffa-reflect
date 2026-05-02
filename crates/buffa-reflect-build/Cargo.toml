@@ -19,7 +19,9 @@ buffa-descriptor.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-buffa-reflect.workspace = true
+# Path-only so `cargo publish` does not require buffa-reflect to already be on
+# crates.io when this crate is packaged independently.
+buffa-reflect = { path = "../buffa-reflect" }
 tempfile.workspace = true
 
 [lints.rust]

@@ -3,8 +3,7 @@
 #![cfg(all(feature = "dynamic", feature = "serde"))]
 #![allow(missing_docs)]
 
-use buffa::Message as _;
-use buffa::bytes::Bytes;
+use buffa::{Message as _, bytes::Bytes};
 use buffa_descriptor::generated::descriptor::{
     DescriptorProto, EnumDescriptorProto, EnumValueDescriptorProto, FieldDescriptorProto,
     FileDescriptorProto, FileDescriptorSet, MessageOptions,

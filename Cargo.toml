@@ -39,6 +39,6 @@ buffa-build = { version = "0.4" }
 buffa-descriptor = { version = "0.4" }
 
 # this workspace
-buffa-reflect = { path = "crates/buffa-reflect" }
-buffa-reflect-build = { path = "crates/buffa-reflect-build" }
-buffa-reflect-derive = { path = "crates/buffa-reflect-derive" }
+buffa-reflect = { version = "0.1.0", path = "crates/buffa-reflect" }
+buffa-reflect-build = { version = "0.1.0", path = "crates/buffa-reflect-build" }
+buffa-reflect-derive = { version = "0.1.0", path = "crates/buffa-reflect-derive" }

@@ -5,10 +5,14 @@ mod wkt;
 use base64::Engine as _;
 use serde::ser::{Error as _, SerializeMap as _, SerializeSeq as _, Serializer};
 
-use crate::dynamic::message::DynamicMessage;
-use crate::dynamic::serde::SerializeOptions;
-use crate::dynamic::value::{MapKey, Value};
-use crate::field::{FieldDescriptor, Kind};
+use crate::{
+    dynamic::{
+        message::DynamicMessage,
+        serde::SerializeOptions,
+        value::{MapKey, Value},
+    },
+    field::{FieldDescriptor, Kind},
+};
 
 pub(crate) fn serialize_message<S: Serializer>(
     message: &DynamicMessage,

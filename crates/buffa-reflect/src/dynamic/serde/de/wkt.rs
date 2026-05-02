@@ -1,17 +1,21 @@
 //! Well-known type JSON deserializers.
 
-use std::collections::HashMap;
-use std::fmt;
+use std::{collections::HashMap, fmt};
 
 use buffa::bytes::Bytes;
-use serde::Deserialize as _;
-use serde::de::{Deserializer, Error as _, MapAccess, SeqAccess, Visitor};
+use serde::{
+    Deserialize as _,
+    de::{Deserializer, Error as _, MapAccess, SeqAccess, Visitor},
+};
 
-use crate::dynamic::message::DynamicMessage;
-use crate::dynamic::serde::DeserializeOptions;
-use crate::dynamic::serde::case::lower_camel_to_snake;
-use crate::dynamic::value::{MapKey, Value};
-use crate::message::MessageDescriptor;
+use crate::{
+    dynamic::{
+        message::DynamicMessage,
+        serde::{DeserializeOptions, case::lower_camel_to_snake},
+        value::{MapKey, Value},
+    },
+    message::MessageDescriptor,
+};
 
 pub(super) fn deserialize_wkt<'de, D: Deserializer<'de>>(
     full_name: &str,

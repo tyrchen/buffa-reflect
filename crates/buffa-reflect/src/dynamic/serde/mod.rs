@@ -11,11 +11,12 @@ pub(crate) mod case;
 mod de;
 mod ser;
 
-use serde::de::{DeserializeSeed, Deserializer};
-use serde::ser::{Serialize, Serializer};
+use serde::{
+    de::{DeserializeSeed, Deserializer},
+    ser::{Serialize, Serializer},
+};
 
-use crate::dynamic::message::DynamicMessage;
-use crate::message::MessageDescriptor;
+use crate::{dynamic::message::DynamicMessage, message::MessageDescriptor};
 
 /// Knobs controlling JSON serialization. Defaults match the proto3
 /// JSON canonical form.

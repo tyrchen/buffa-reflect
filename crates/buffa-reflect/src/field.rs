@@ -122,8 +122,8 @@ impl FieldDescriptor {
     /// True iff this is a `repeated` (non-map) field.
     ///
     /// Note that `map<K, V>` fields are technically also repeated on
-    /// the wire, but their value model is [`Value::Map`], not
-    /// [`Value::List`] — this helper returns `false` for maps.
+    /// the wire, but their value model is [`crate::Value::Map`], not
+    /// [`crate::Value::List`] — this helper returns `false` for maps.
     #[must_use]
     pub fn is_list(&self) -> bool {
         matches!(self.entry().cardinality, Cardinality::Repeated) && !self.is_map()

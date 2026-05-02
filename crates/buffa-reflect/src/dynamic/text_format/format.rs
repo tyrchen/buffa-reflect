@@ -2,9 +2,13 @@
 
 use std::fmt::Write as _;
 
-use crate::dynamic::message::DynamicMessage;
-use crate::dynamic::value::{MapKey, Value};
-use crate::field::{FieldDescriptor, Kind};
+use crate::{
+    dynamic::{
+        message::DynamicMessage,
+        value::{MapKey, Value},
+    },
+    field::{FieldDescriptor, Kind},
+};
 
 /// Configuration for [`crate::DynamicMessage::to_text_format_with_options`].
 #[derive(Debug, Clone)]

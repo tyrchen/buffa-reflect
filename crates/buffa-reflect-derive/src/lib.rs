@@ -1,4 +1,4 @@
-//! Proc-macro derive for [`buffa_reflect::ReflectMessage`].
+//! Proc-macro derive for `buffa_reflect::ReflectMessage`.
 //!
 //! See the `buffa-reflect` crate documentation for the full reflection API.
 //! This crate is exposed transparently through the default `derive` feature

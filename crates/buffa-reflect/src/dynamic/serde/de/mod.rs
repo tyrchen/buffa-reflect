@@ -2,18 +2,21 @@
 
 mod wkt;
 
-use std::collections::HashMap;
-use std::fmt;
+use std::{collections::HashMap, fmt};
 
 use base64::Engine as _;
 use buffa::bytes::Bytes;
 use serde::de::{Deserializer, Error as _, MapAccess, SeqAccess, Visitor};
 
-use crate::dynamic::message::DynamicMessage;
-use crate::dynamic::serde::DeserializeOptions;
-use crate::dynamic::value::{MapKey, Value};
-use crate::field::{FieldDescriptor, Kind};
-use crate::message::MessageDescriptor;
+use crate::{
+    dynamic::{
+        message::DynamicMessage,
+        serde::DeserializeOptions,
+        value::{MapKey, Value},
+    },
+    field::{FieldDescriptor, Kind},
+    message::MessageDescriptor,
+};
 
 pub(crate) fn deserialize_message<'de, D: Deserializer<'de>>(
     descriptor: &MessageDescriptor,

@@ -1,4 +1,4 @@
-//! Runtime-typed protobuf messages keyed by [`MessageDescriptor`].
+//! Runtime-typed protobuf messages keyed by [`crate::MessageDescriptor`].
 //!
 //! Phase 2a delivers [`DynamicMessage`] — a message whose field set is
 //! discovered at runtime from a descriptor. Use it when the wire schema is
