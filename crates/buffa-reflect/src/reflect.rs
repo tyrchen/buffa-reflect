@@ -3,13 +3,18 @@
 
 use crate::message::MessageDescriptor;
 
-/// Implemented by every generated buffa message that has a descriptor in
-/// some [`crate::DescriptorPool`].
+/// Implemented by every type that has a descriptor in some
+/// [`crate::DescriptorPool`] — generated typed messages via
+/// `#[derive(ReflectMessage)]` and runtime-typed
+/// [`crate::DynamicMessage`].
 ///
-/// Carries `descriptor()` plus, when the `dynamic` feature is on, a
-/// default-impl `transcode_to_dynamic()` that wire-encodes `self` and
-/// decodes the bytes against the descriptor.
-pub trait ReflectMessage: ::buffa::Message {
+/// Note: this trait deliberately does **not** require
+/// [`buffa::Message`] as a super-trait so that
+/// [`crate::DynamicMessage`] (which has no static
+/// `DefaultInstance`) can implement it. Where wire-encoding via
+/// `Self::encode_to_vec` is needed, individual methods name
+/// `Self: ::buffa::Message` as a where-clause.
+pub trait ReflectMessage {
     /// Resolve the [`MessageDescriptor`] for `Self`.
     ///
     /// The pool the descriptor lives in is set up by the
@@ -32,7 +37,7 @@ pub trait ReflectMessage: ::buffa::Message {
     #[cfg(feature = "dynamic")]
     fn transcode_to_dynamic(&self) -> crate::DynamicMessage
     where
-        Self: Sized,
+        Self: ::buffa::Message + Sized,
     {
         let descriptor = self.descriptor();
         let bytes = ::buffa::Message::encode_to_vec(self);
@@ -52,13 +57,16 @@ pub trait ReflectMessageView<'a>: ::buffa::view::MessageView<'a> {
     fn descriptor(&self) -> MessageDescriptor;
 }
 
-// `DynamicMessage` is intentionally not a [`ReflectMessage`]: the
-// supertrait bound (`buffa::Message`) requires a static
-// `DefaultInstance` keyed by Rust type, which a runtime-typed
-// `DynamicMessage` cannot satisfy without a fake descriptor.
-//
-// Generic code that needs uniform handling between typed and dynamic
-// messages can call [`crate::DynamicMessage::descriptor`] and
-// [`crate::DynamicMessage::transcode_to`] / `transcode_to_dynamic`
-// directly — both are method-resolved with the same names a
-// `ReflectMessage` impl would surface.
+#[cfg(feature = "dynamic")]
+impl ReflectMessage for crate::DynamicMessage {
+    fn descriptor(&self) -> MessageDescriptor {
+        crate::DynamicMessage::descriptor(self)
+    }
+
+    // `transcode_to_dynamic` is intentionally not overridden here —
+    // the trait's default impl carries `where Self: buffa::Message`,
+    // which `DynamicMessage` cannot satisfy. Callers reach the
+    // short-circuit via the inherent
+    // [`crate::DynamicMessage::transcode_to_dynamic`], which has the
+    // same name and resolves first under Rust's method-resolution rules.
+}

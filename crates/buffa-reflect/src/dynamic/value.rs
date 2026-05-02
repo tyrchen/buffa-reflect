@@ -1,7 +1,7 @@
 //! [`Value`], [`MapKey`], and [`SetFieldError`] — the runtime value model
 //! that backs [`super::DynamicMessage`].
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use buffa::bytes::Bytes;
 
@@ -348,10 +348,10 @@ pub(crate) fn value_matches_kind(value: &Value, kind: &Kind) -> bool {
         (Value::String(_), Kind::String) => true,
         (Value::Bytes(_), Kind::Bytes) => true,
         (Value::EnumNumber(_), Kind::Enum(_)) => true,
-        (Value::Message(m), Kind::Message(d)) => {
-            Arc::ptr_eq(&m.descriptor().pool.inner, &d.pool.inner)
-                && m.descriptor().index == d.index
-        }
+        // Compare by FQN rather than `Arc::ptr_eq` so that pool
+        // mutations (`add_file_descriptor_set` calls `Arc::make_mut`)
+        // don't invalidate previously-constructed sub-messages.
+        (Value::Message(m), Kind::Message(d)) => m.descriptor().full_name() == d.full_name(),
         _ => false,
     }
 }

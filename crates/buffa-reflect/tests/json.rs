@@ -236,6 +236,20 @@ fn test_should_reject_unknown_field_when_deny_set() {
     let d = user_descriptor();
     let json = r#"{"unknownField": 1}"#;
     let mut de = serde_json::Deserializer::from_str(json);
-    let err = d.deserialize(&mut de).unwrap_err();
+    let opts = buffa_reflect::DeserializeOptions::new().deny_unknown_fields(true);
+    let err =
+        buffa_reflect::DynamicMessage::deserialize_with_options(d, &mut de, &opts).unwrap_err();
     assert!(err.to_string().contains("unknown field"));
+}
+
+#[test]
+fn test_should_silently_drop_unknown_field_by_default() {
+    let d = user_descriptor();
+    let json = r#"{"unknownField": 1, "userId": "alice"}"#;
+    let mut de = serde_json::Deserializer::from_str(json);
+    let m = d.deserialize(&mut de).unwrap();
+    assert_eq!(
+        m.get_field_by_name("user_id").unwrap().as_str(),
+        Some("alice")
+    );
 }

@@ -92,19 +92,18 @@ impl Default for DeserializeOptions {
 }
 
 impl DeserializeOptions {
-    /// Defaults: `deny_unknown_fields = true` (proto3 spec is `false`,
-    /// but matching prost-reflect's stricter default catches most
-    /// schema bugs early; flip the knob to opt back in to silent-drop
-    /// behaviour).
+    /// Defaults: `deny_unknown_fields = false` per proto3 JSON spec
+    /// (`ignore_unknown_fields = true` by default). Flip the knob on
+    /// when you'd rather catch schema mismatches early.
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            deny_unknown_fields: true,
+            deny_unknown_fields: false,
         }
     }
 
     /// When `true`, decoders raise `serde::de::Error::unknown_field`
-    /// instead of silently dropping. Default `true`.
+    /// instead of silently dropping. Default `false`.
     #[must_use]
     pub const fn deny_unknown_fields(mut self, yes: bool) -> Self {
         self.deny_unknown_fields = yes;

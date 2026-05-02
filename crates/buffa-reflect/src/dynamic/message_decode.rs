@@ -17,15 +17,15 @@ use crate::{
 };
 
 /// Top-level merge entry. Iterates `(tag, payload)` pairs and
-/// dispatches per field.
+/// dispatches per field. `depth` is the remaining recursion budget;
+/// it is **not** decremented here — the only decrement happens when
+/// entering a sub-message (`read_singular` for `Kind::Message`),
+/// matching buffa's typed `merge_length_delimited`.
 pub(super) fn merge<B: Buf>(
     msg: &mut DynamicMessage,
     buf: &mut B,
     depth: u32,
 ) -> Result<(), DecodeError> {
-    let depth = depth
-        .checked_sub(1)
-        .ok_or(DecodeError::RecursionLimitExceeded)?;
     while buf.has_remaining() {
         let tag = Tag::decode(buf)?;
         let number = tag.field_number();

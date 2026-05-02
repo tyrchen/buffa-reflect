@@ -6,7 +6,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(false)
         .build_server(true)
         .compile_protos(
-            &["proto/grpc/reflection/v1/reflection.proto"],
+            &[
+                "proto/grpc/reflection/v1/reflection.proto",
+                "proto/grpc/reflection/v1alpha/reflection.proto",
+            ],
             &["proto/"],
         )?;
     Ok(())

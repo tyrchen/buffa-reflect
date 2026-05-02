@@ -523,3 +523,18 @@ fn test_dynamic_transcode_to_dynamic_should_clone() {
     let m2 = m.transcode_to_dynamic();
     assert_eq!(m, m2);
 }
+
+#[test]
+fn test_dynamic_message_should_implement_reflect_message() {
+    let d = user_descriptor();
+    let m = DynamicMessage::new(d.clone());
+    // Generic call site treating `&DynamicMessage` as a generic
+    // `T: ReflectMessage` — confirms the trait impl resolves and that
+    // descriptor() returns the same descriptor we constructed it with.
+    fn require_reflect<T: buffa_reflect::ReflectMessage>(
+        t: &T,
+    ) -> buffa_reflect::MessageDescriptor {
+        t.descriptor()
+    }
+    assert_eq!(require_reflect(&m), d);
+}

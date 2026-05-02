@@ -144,3 +144,39 @@ fn test_advertised_services_overrides_pool() {
     let names: Vec<String> = list.service.into_iter().map(|s| s.name).collect();
     assert_eq!(names, vec!["custom.Service"]);
 }
+
+#[test]
+fn test_v1alpha_list_services_matches_v1() {
+    use buffa_grpc_reflection::ReflectionServiceV1Alpha;
+    use buffa_grpc_reflection::proto::v1alpha::{
+        ServerReflectionRequest, server_reflection_request::MessageRequest,
+        server_reflection_response::MessageResponse,
+    };
+    let svc = ReflectionServiceV1Alpha::new(build_pool(), None);
+    let resp = svc.handle_one(ServerReflectionRequest {
+        host: String::new(),
+        message_request: Some(MessageRequest::ListServices(String::new())),
+    });
+    let MessageResponse::ListServicesResponse(list) = resp.message_response.unwrap() else {
+        panic!("expected list response");
+    };
+    let names: Vec<String> = list.service.into_iter().map(|s| s.name).collect();
+    assert_eq!(names, vec!["acme.Greeter"]);
+}
+
+#[test]
+fn test_file_containing_extension_returns_not_found() {
+    use buffa_grpc_reflection::proto::v1::ExtensionRequest;
+    let svc = ReflectionService::new(build_pool(), None);
+    let MessageResponse::ErrorResponse(e) = dispatch(
+        &svc,
+        MessageRequest::FileContainingExtension(ExtensionRequest {
+            containing_type: "acme.HelloRequest".into(),
+            extension_number: 1000,
+        }),
+    ) else {
+        panic!("expected NOT_FOUND error response");
+    };
+    assert_eq!(e.error_code, 5);
+    assert!(e.error_message.contains("not found"));
+}
