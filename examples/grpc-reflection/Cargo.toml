@@ -1,0 +1,27 @@
+[package]
+name = "buffa-grpc-reflection"
+description = "grpc.reflection.v1 service backed by a buffa-reflect DescriptorPool."
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# Leaf workspace — keep tonic + prost out of the parent buffa-reflect Cargo.lock.
+[workspace]
+
+[dependencies]
+buffa = "0.4"
+buffa-reflect = { path = "../../crates/buffa-reflect" }
+buffa-descriptor = "0.4"
+prost = "0.14"
+tokio-stream = "0.1"
+tonic = "0.14"
+tonic-prost = "0.14"
+async-stream = "0.3"
+
+[build-dependencies]
+tonic-build = "0.14"
+tonic-prost-build = "0.14"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "net"] }

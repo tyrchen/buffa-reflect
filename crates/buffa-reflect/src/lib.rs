@@ -37,6 +37,7 @@ pub mod oneof;
 pub mod pool;
 mod pool_build;
 pub mod reflect;
+pub mod service;
 
 #[cfg(feature = "dynamic")]
 pub mod dynamic;
@@ -63,4 +64,5 @@ pub use crate::{
     oneof::OneofDescriptor,
     pool::DescriptorPool,
     reflect::{ReflectMessage, ReflectMessageView},
+    service::{MethodDescriptor, ServiceDescriptor},
 };

@@ -46,6 +46,8 @@ pub(crate) struct PoolInner {
     pub(crate) files: Vec<FileEntry>,
     pub(crate) messages: Vec<MessageEntry>,
     pub(crate) enums: Vec<EnumEntry>,
+    pub(crate) services: Vec<crate::service::ServiceEntry>,
+    pub(crate) service_names: hashbrown::HashMap<Box<str>, crate::service::ServiceIndex>,
 }
 
 /// What a fully-qualified name refers to in the pool.
@@ -63,6 +65,8 @@ pub(crate) struct FileEntry {
     pub(crate) messages: Vec<MessageIndex>,
     /// Top-level enum indices owned by this file.
     pub(crate) enums: Vec<EnumIndex>,
+    /// Service indices declared in this file.
+    pub(crate) service_indices: Vec<crate::service::ServiceIndex>,
 }
 
 #[derive(Clone)]
@@ -196,6 +200,8 @@ const _: fn() = || {
     assert_send_sync::<crate::enumeration::EnumDescriptor>();
     assert_send_sync::<crate::oneof::OneofDescriptor>();
     assert_send_sync::<crate::file::FileDescriptor>();
+    assert_send_sync::<crate::service::ServiceDescriptor>();
+    assert_send_sync::<crate::service::MethodDescriptor>();
 };
 
 impl DescriptorPool {

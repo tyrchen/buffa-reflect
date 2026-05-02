@@ -4,7 +4,7 @@
 
 use buffa_descriptor::generated::descriptor::{
     DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
-    FileDescriptorSet, OneofDescriptorProto,
+    FileDescriptorSet, MethodDescriptorProto, OneofDescriptorProto, ServiceDescriptorProto,
     field_descriptor_proto::{Label, Type},
 };
 
@@ -15,6 +15,7 @@ use crate::{
         Definition, EnumEntry, EnumIndex, EnumValueEntry, FieldEntry, FileEntry, FileIndex,
         KindRef, MessageEntry, MessageIndex, OneofEntry, PoolInner,
     },
+    service::{MethodEntry, ServiceEntry},
 };
 
 /// Largest legal protobuf field number.
@@ -68,6 +69,7 @@ pub(crate) fn ingest_file_descriptor_set(
             proto: file_proto,
             messages: top_messages,
             enums: top_enums,
+            service_indices: Vec::new(),
         });
     }
 
@@ -82,7 +84,118 @@ pub(crate) fn ingest_file_descriptor_set(
         validate_enum(pool, enum_index as EnumIndex)?;
     }
 
+    // Pass 3 — resolve services / methods (now that the message name table
+    // is fully populated). Cross-file `input_type` / `output_type`
+    // references resolve through the existing scope walker.
+    let total_files = pool.files.len();
+    for file_index in 0..total_files {
+        resolve_services(pool, file_index as FileIndex)?;
+    }
+
     Ok(())
+}
+
+fn resolve_services(pool: &mut PoolInner, file_index: FileIndex) -> Result<(), DescriptorError> {
+    // Snapshot file proto + package without holding a borrow.
+    let file_proto = pool.files[file_index as usize].proto.clone();
+    let package = file_proto.package.as_deref().unwrap_or("").to_string();
+    let mut indices = Vec::with_capacity(file_proto.service.len());
+    for (proto_index, svc_proto) in file_proto.service.iter().enumerate() {
+        let proto_index = u32::try_from(proto_index)
+            .map_err(|_| DescriptorError::Validation("too many services in file".into()))?;
+        let entry = build_service_entry(pool, &package, file_index, proto_index, svc_proto)?;
+        let svc_idx = u32::try_from(pool.services.len())
+            .map_err(|_| DescriptorError::Validation("too many services in pool".into()))?;
+        pool.service_names.insert(entry.full_name.clone(), svc_idx);
+        pool.services.push(entry);
+        indices.push(svc_idx);
+    }
+    pool.files[file_index as usize].service_indices = indices;
+    Ok(())
+}
+
+fn build_service_entry(
+    pool: &PoolInner,
+    package: &str,
+    file_index: FileIndex,
+    proto_index: u32,
+    proto: &ServiceDescriptorProto,
+) -> Result<ServiceEntry, DescriptorError> {
+    let name = proto
+        .name
+        .clone()
+        .ok_or_else(|| DescriptorError::MissingName {
+            location: package.to_string(),
+        })?;
+    let full_name = if package.is_empty() {
+        name.clone()
+    } else {
+        format!("{package}.{name}")
+    };
+    if pool.service_names.contains_key(full_name.as_str()) {
+        return Err(DescriptorError::DuplicateType(full_name));
+    }
+    let mut methods = Vec::with_capacity(proto.method.len());
+    for (i, m) in proto.method.iter().enumerate() {
+        let proto_method_index = u32::try_from(i)
+            .map_err(|_| DescriptorError::Validation("too many methods in service".into()))?;
+        methods.push(build_method_entry(pool, &full_name, proto_method_index, m)?);
+    }
+    Ok(ServiceEntry {
+        full_name: full_name.into_boxed_str(),
+        name: name.into_boxed_str(),
+        file: file_index,
+        proto_index,
+        methods,
+    })
+}
+
+fn build_method_entry(
+    pool: &PoolInner,
+    service_full_name: &str,
+    proto_index: u32,
+    proto: &MethodDescriptorProto,
+) -> Result<MethodEntry, DescriptorError> {
+    let name = proto
+        .name
+        .clone()
+        .ok_or_else(|| DescriptorError::MissingName {
+            location: service_full_name.to_string(),
+        })?;
+    let full_name = format!("{service_full_name}.{name}");
+    let input_type = proto.input_type.as_deref().ok_or_else(|| {
+        DescriptorError::Validation(format!("method `{full_name}` is missing input_type"))
+    })?;
+    let output_type = proto.output_type.as_deref().ok_or_else(|| {
+        DescriptorError::Validation(format!("method `{full_name}` is missing output_type"))
+    })?;
+    let input = lookup_message(pool, input_type, &full_name, "input_type")?;
+    let output = lookup_message(pool, output_type, &full_name, "output_type")?;
+    Ok(MethodEntry {
+        name: name.into_boxed_str(),
+        full_name: full_name.into_boxed_str(),
+        input,
+        output,
+        is_client_streaming: proto.client_streaming.unwrap_or(false),
+        is_server_streaming: proto.server_streaming.unwrap_or(false),
+        proto_index,
+    })
+}
+
+fn lookup_message(
+    pool: &PoolInner,
+    type_name: &str,
+    field: &str,
+    role: &str,
+) -> Result<MessageIndex, DescriptorError> {
+    let key = type_name.strip_prefix('.').unwrap_or(type_name);
+    match pool.names.get(key) {
+        Some(Definition::Message(idx)) => Ok(*idx),
+        _ => Err(DescriptorError::UnresolvedType {
+            field: format!("{field} ({role})"),
+            type_name: type_name.to_string(),
+        }),
+    }
 }
 
 /// Recursively register a message + its nested types (without resolving
