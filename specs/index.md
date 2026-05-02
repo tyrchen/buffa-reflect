@@ -22,6 +22,8 @@
 
 Sub-phase ordering: 2a is foundational (gates 2b and 2c). 2d and 2e have no Phase 2a dependency and may ship in parallel or before 2a. The umbrella PRD has a flow diagram and effort estimates.
 
+The Phase 2 specs were revised after a deep audit of the prost-reflect source under `vendors/prost-reflect/`. Key revisions captured at the end of each design doc (look for the "Decisions revised after the audit" section in `dynamic-design.md`).
+
 ## Background research
 
 [docs/research/](../docs/research/index.md) — prost-reflect deep-dive, buffa deep-dive, and the gap analysis that pinned down the integration approach.

@@ -1,4 +1,6 @@
 [default.extend-words]
+# `ser` appears as a Rust module/crate name (serde::ser, prost_reflect serde/ser/).
+ser = "ser"
 
 [files]
 extend-exclude = ["CHANGELOG.md", "vendors/"]

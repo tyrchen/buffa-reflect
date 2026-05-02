@@ -133,7 +133,11 @@ Streaming request/response: each request gets exactly one response, but the chan
 
 ## 6. Phase 1 dependency: services in the descriptor pool
 
-Phase 1 ships `MessageDescriptor`, `FieldDescriptor`, `EnumDescriptor`, `OneofDescriptor`, `FileDescriptor`. It does **not** ship `ServiceDescriptor` or `MethodDescriptor`. Phase 2d adds:
+Phase 1 ships `MessageDescriptor`, `FieldDescriptor`, `EnumDescriptor`, `OneofDescriptor`, `FileDescriptor`. It does **not** ship `ServiceDescriptor` or `MethodDescriptor`.
+
+(prost-reflect ships them in its Phase 1 — see `vendors/prost-reflect/prost-reflect/src/descriptor/api.rs:429` for `pool.services()` and `:645` for `file.services()`. We chose to defer; Phase 2d catches up.)
+
+Phase 2d adds:
 
 ```rust
 // crates/buffa-reflect/src/service.rs (Phase 2d-driven)

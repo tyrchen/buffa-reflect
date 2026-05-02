@@ -8,56 +8,74 @@ This plan covers Phase 2a only. JSON / textproto / gRPC / view reflection have t
 
 ## 1. Milestones
 
-### D1 — Module skeleton + `Value` / `MapKey` (1 day)
+### D1 — Module skeleton, `Value`, `MapKey`, `FieldDescriptorLike` (1.5 days)
 
-- New `crates/buffa-reflect/src/dynamic/{mod,value,storage}.rs` — empty types, `Cargo.toml` `[features] dynamic = []` flag default-on.
-- `Value` enum + `MapKey` enum + `Default` / `From` / `PartialEq` / `Debug` impls.
-- `DynamicMessage::new(descriptor)` — empty constructor.
-- Smoke test: `DynamicMessage::new(d).descriptor() == d`.
+- New `crates/buffa-reflect/src/dynamic/{mod,value,fields,unknown}.rs` — empty types, `Cargo.toml` `[features] dynamic = []` flag default-on.
+- `Value` enum (matches prost-reflect's variant set: `Bool`, `I32`, `I64`, `U32`, `U64`, `F32`, `F64`, `String`, `Bytes`, `EnumNumber`, `Message`, `List(Vec<Value>)`, `Map(HashMap<MapKey, Value>)`).
+- `MapKey` enum (subset of Value variants legal for map keys: `Bool`, `I32`, `I64`, `U32`, `U64`, `String`).
+- `Value::is_valid_for_field` — recursive validation per design §7.
+- `FieldDescriptorLike` trait declared, `FieldDescriptor` impl provided. Extension impl deferred.
+- `DynamicMessageFieldSet` struct with `BTreeMap<u32, ValueOrUnknown>` storage; `ValueOrUnknown::Taken` sentinel. Per-method shape mirrors `vendors/prost-reflect/prost-reflect/src/dynamic/fields.rs`.
+- `DynamicMessage::new(descriptor)` constructor.
+- Smoke tests: empty construction; `Value::is_valid_for_field` for each Kind.
 
-### D2 — Accessors: get/set/has/clear (2–3 days)
+### D2 — Accessors: get/set/has/clear (2 days)
 
-- `accessors.rs`: implement the eight `*_by_name` / `*_by_number` / `*_by_field_descriptor` variants.
-- Type validation for `set_field` per the table in design §5.
-- Oneof set/clear invariants (mutate `slots` + `oneof_active` together).
-- Default-value synthesis (`defaults.rs`) for the proto3 zero values; proto2 explicit `default_value` parsing for scalars.
+- `set_field` (debug-assert validation, panics in debug) + `try_set_field` (Result). Same pattern for `_by_name` / `_by_number` variants. Per design §5.
+- `get_field` returns `Cow<'_, Value>`; defaults synthesised on miss.
+- `get_field_mut` calls `clear_oneof_fields` before returning a mutable handle.
+- Oneof set / clear / get_mut invariants (mirror `prost-reflect/src/dynamic/fields.rs:107-114`).
 - Tests:
   - `set` then `get` round-trips for every Kind.
-  - `set` of wrong type returns `SetFieldError::TypeMismatch` (no panic).
-  - `set` on field A of oneof, then field B of same oneof — `has(A) == false`, `has(B) == true`.
+  - `try_set_field` rejection: a string-into-int32 attempt returns `SetFieldError::InvalidType` (no panic in release; `debug_assert!` panic in debug).
+  - Cross-pool `Value::Message` set rejected with `SetFieldError::InvalidType`.
+  - Oneof: set field A, then field B of the same oneof → `has(A) == false`, `has(B) == true`. `clear(B)` → both unset.
   - `clear` of an absent field is a no-op.
-  - Nested message: build a multi-level tree with `set_field`.
+  - Nested message: build a multi-level tree with `set_field` only.
+
+### D2.5 — Eager default-value parser at pool-build time (1 day, Phase 1 amend)
+
+- `crates/buffa-reflect/src/pool_build.rs` — parse `FieldDescriptorProto::default_value` once at pool build, store on `FieldEntry`.
+- Parser handles: signed/unsigned int (decimal/octal/hex), floats (incl. `inf`/`-inf`/`nan`), `true`/`false`, C-escaped strings, byte literals, enum-by-name. Mirrors `vendors/prost-reflect/prost-reflect/src/descriptor/build/resolve.rs:627-698`.
+- New variant `DescriptorError::InvalidDefaultValue { field, value, message }`.
+- `DescriptorPool::decode` accumulates all such errors and returns them aggregated (not first-fail) — better diagnostics.
+- Tests: each scalar Kind with a representative `default_value` string; one explicit-failure case for each malformed input class.
 
 ### D3 — Wire decode (2 days)
 
-- `decode.rs`: `merge_from_slice` loop, dispatching by `KindRef` and `cardinality`.
-- Recursion-limit threading (default `RECURSION_LIMIT`).
-- Packed-vs-unpacked dual reading for repeated scalars (handle either wire encoding regardless of the field's packed flag — protoc emits both depending on the producer).
-- Unknown-field preservation via `encoding::decode_unknown_field`.
-- Forward-compat enum decoding: store unknown enum numbers in `Value::EnumNumber(raw)`.
+- `dynamic/message.rs`: `merge<B: Buf>` loop, dispatching by `Kind` and `cardinality` over the decoded `Tag`.
+- Recursion-limit threading via `DecodeOptions` (default `RECURSION_LIMIT`).
+- Packed-vs-unpacked dual reading for repeated scalars: dispatch by *observed* wire type, not descriptor's `is_packed()`.
+- Unknown-field preservation via `decode_unknown_field` into `UnknownFieldSet` keyed by the original number; multiple tags with the same number accumulate in insertion order.
+- Forward-compat enum decoding: unknown enum numbers stored as `Value::EnumNumber(raw)`.
 - Tests:
-  - For every fixture in the equivalence suite (`examples/equivalence/proto/`), construct the typed message via `buffa`, encode to bytes, then `DynamicMessage::decode` against the same descriptor — assert non-error and that `populated_fields()` count matches expectations.
-  - Recursion-limit guard: a hand-crafted 200-deep wire input fails with `RecursionLimitExceeded`.
-  - Unknown-field round-trip: append a fake tag with a varint payload; decode; observe the bytes are preserved.
+  - For every fixture in `examples/equivalence/proto/`, construct the typed message via `buffa`, encode, then `DynamicMessage::decode` against the same descriptor — assert non-error and that `fields().count()` matches.
+  - Recursion-limit guard: hand-crafted 200-deep wire input fails with `RecursionLimitExceeded`.
+  - Unknown-field round-trip: append a fake tag with a varint payload; decode; observe the bytes are preserved at the right number-position on re-encode.
+  - Decode unknown enum number; encode; observe round-trip.
 
-### D4 — Wire encode (2–3 days)
+### D4 — Wire encode (2 days)
 
-- `encode.rs`: `compute_size` + `write_to` mirroring buffa's `Message::compute_size` / `write_to` pattern.
-- Per-Kind dispatch (table in design §3).
-- Packed encoding emission for `is_packed()` repeated scalars.
-- Map field encoding via synthetic `Entry { K key = 1; V value = 2; }`.
-- Field iteration order = descriptor's `field` declaration order.
-- `unknown_fields.write_to(buf)` after known fields.
+- `dynamic/message.rs`: `encoded_len` + `encode<B: BufMut>`, two-pass.
+- Per-Kind dispatch (single big match per Kind × cardinality, like `prost-reflect/src/dynamic/message.rs:93-244`).
+- Packed encoding emission for `is_packed()` repeated scalars; checked per encode (no caching).
+- Map field encoding: synthesise `Entry { K key = 1; V value = 2; }` directly without instantiating an entry `DynamicMessage`. Sort entries by `MapKey` order before emit.
+- Iteration order: BTreeMap natural order (field number ascending). Known and unknown fields interleave at their numbers.
 - Tests:
-  - Set-then-encode produces non-empty bytes that decode back to the same `DynamicMessage` (PartialEq).
-  - **Byte-equivalence**: for every equivalence-suite fixture, `buffa_typed.encode_to_vec() == DynamicMessage::decode(d, buffa_typed.encode_to_vec()).encode_to_vec()`.
-  - Map encoding order is deterministic (BTreeMap → ascending key order).
-  - Packed scalars round-trip through `is_packed = true` and `is_packed = false` fixtures.
+  - Set-then-encode produces bytes that decode back to a `PartialEq`-equal `DynamicMessage`.
+  - **Byte-equivalence**: for every fixture, `buffa_typed.encode_to_vec() == DynamicMessage::decode(d, buffa_typed.encode_to_vec()).encode_to_vec()`.
+  - Map encoding order is deterministic across runs.
+  - Packed scalars round-trip in both packed and unpacked encodings.
 
-### D5 — `ReflectMessage::transcode_to_dynamic` / `from_dynamic` (1 day)
+### D5 — `ReflectMessage::transcode_to_dynamic` + `DynamicMessage::transcode_to/from` (1 day)
 
-- Two trait methods with default impls (design §6).
-- The methods compile cleanly when `dynamic` is off (cfg-gated).
+- One trait method on `ReflectMessage` (`transcode_to_dynamic`), plus `transcode_from`/`transcode_to::<T>` on `DynamicMessage`. All cfg-gated on `dynamic`.
+- `impl ReflectMessage for DynamicMessage` with `transcode_to_dynamic` short-circuiting to `self.clone()` (matches `prost-reflect/src/dynamic/mod.rs:585-596`).
+- Tests (in the existing `tests/derive.rs`):
+  - For every UserBytesForm / UserPoolForm fixture: `typed.transcode_to_dynamic().get_field_by_name("...")` matches `typed.field`.
+  - `dyn.transcode_to::<User>() == user_typed`.
+  - `(typed_user).transcode_to_dynamic().transcode_to::<User>() == typed_user`.
+  - `dyn.transcode_to_dynamic() ≡ dyn.clone()` (specialisation correctness).
 - Tests (in the existing `tests/derive.rs` file; the derive emits the trait impl):
   - For every UserBytesForm / UserPoolForm fixture: `typed.transcode_to_dynamic().get_field_by_name("...")` matches `typed.field`.
   - `User::from_dynamic(&typed.transcode_to_dynamic()) == typed`.
@@ -82,7 +100,7 @@ This plan covers Phase 2a only. JSON / textproto / gRPC / view reflection have t
 - Add the "default-features include `dynamic`" note to the root `README.md`.
 - `make verify` clean.
 
-Total: **~10–13 working days** for one contributor.
+Total: **~11–14 working days** for one contributor (the +1 over the original estimate is the D2.5 default-value parser amend).
 
 ---
 
@@ -109,7 +127,7 @@ Before posting "ready for review" the implementer ticks:
 - [ ] `cargo +nightly fmt --check` clean.
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean.
 - [ ] `cargo doc --workspace --no-deps` clean.
-- [ ] All eight scenarios in design §10 are covered by tests with descriptive `test_should_…` names.
+- [ ] Every scenario in design §13 is covered by tests with descriptive `test_should_…` names (currently 9 scenarios: byte-equivalence, set/get round-trip, try_set rejection, unknown-field preservation, recursion-limit, transcode_to_dynamic round-trip, transcode_to round-trip, DynamicMessage-as-ReflectMessage, Send+Sync, feature opt-out).
 - [ ] The conformance harness runs against the full fixture set and `known_failures.txt` documents every failure.
 - [ ] `examples/equivalence/` extended to cover `DynamicMessage` parity.
 - [ ] No `unsafe` (the crate-level `unsafe_code = "forbid"` attribute remains).
@@ -122,7 +140,7 @@ Before posting "ready for review" the implementer ticks:
 | Risk | Mitigation |
 | --- | --- |
 | Two-pass encode + map ordering subtly diverges from buffa's typed output. | Run the byte-equivalence test (§D4) against the full equivalence fixture before merging. Discrepancies surface as a single `assert_eq!` diff with the offending bytes. |
-| Default-value parsing for proto2 (`default_value = "0x1f"` for bytes, `default_value = "nan"` for doubles, etc.) hits edge cases the spec only documents informally. | For Phase 2a: only support a documented subset (numeric literals, bool, string with C-style escapes, enum by name). Anything else falls back to the kind's zero value with a debug-log warning. JSON / textproto phases tighten this. |
+| Default-value parsing for proto2 (`default_value = "0x1f"` for bytes, `default_value = "nan"` for doubles, etc.) hits edge cases the spec only documents informally. | Lift the parser shape from `vendors/prost-reflect/prost-reflect/src/descriptor/build/resolve.rs:627-698` — it covers signed/unsigned int (decimal/octal/hex), floats with `inf`/`nan`, bools, C-escaped strings, byte literals, enum-by-name. Errors accumulate at pool-build time so they surface as `DescriptorPool::decode` failures, not surprises at first read. |
 | `Bytes` storage in `Value::Bytes` interacts with `Bytes::clone` cost in surprising ways for very large blobs. | `Bytes` clones are refcount bumps; no copy. The downstream user only pays for the deep clone when they explicitly call `.to_vec()`. Documented. |
 | Recursion guard interacts with `Drop` for very deep trees. | Document the limitation; iterative drop is a future improvement if real workloads exhibit it. |
 | Performance regression vs. typed code is meaningful (~5–10× rather than the expected 2–3×). | Ship Phase 2a without micro-optimization; benchmark in a follow-up using `criterion`. The PRD already disclaims hot-path optimization for this phase. |

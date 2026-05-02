@@ -80,17 +80,19 @@ The bar for Phase 2 done:
   // Round-trip back to wire.
   let bytes = dyn_msg.encode_to_vec();
 
-  // JSON.
+  // JSON — MessageDescriptor *is* the DeserializeSeed (no helper needed).
+  use serde::de::DeserializeSeed;
   let json = serde_json::to_string(&dyn_msg)?;
-  let dyn2: DynamicMessage = serde_json::from_str_with_pool(&json, descriptor)?;
+  let mut de = serde_json::de::Deserializer::from_str(&json);
+  let dyn2: DynamicMessage = descriptor.clone().deserialize(&mut de)?;
 
   // Transcode between the static type and DynamicMessage.
-  let typed: User = ReflectMessage::from_dynamic(&dyn_msg)?;
+  let typed: User = dyn_msg.transcode_to::<User>()?;
   let dyn3 = typed.transcode_to_dynamic();
   assert_eq!(dyn3.encode_to_vec(), wire_bytes);
   ```
 - For any message in any pool, `dyn_msg.encode_to_vec() == buffa_codec_encode(typed_form)` where the dynamic was produced from the same proto.
-- Conformance: ≥ 95% of the protobuf conformance suite passes, with a `known_failures.txt` capturing the known limitations (matching prost-reflect's record).
+- Conformance: **100 %** of the binary, JSON, and textproto conformance suites pass. (`vendors/prost-reflect/prost-reflect-conformance-tests/{failure_list,text_format_failure_list}.txt` are empty — prost-reflect achieves full conformance and so should we. Any documented gaps go in `crates/buffa-reflect-conformance-tests/failure_list*.txt` with one-line justifications.)
 - Build matrix: `cargo build --workspace --all-features` and `cargo test --workspace --all-features` clean. `cargo clippy --workspace --all-targets -- -D warnings` clean.
 
 ## Sub-phase ordering & critical path
@@ -134,23 +136,30 @@ The critical path is **2a → (2b ‖ 2c) → conformance**. 2d and 2e have no P
 
 | Risk | Mitigation |
 | --- | --- |
-| Dynamic encode produces non-canonical wire bytes (different field ordering than the typed encoder), breaking byte-equivalence tests. | Mirror buffa's field-emission order verbatim — iterate fields in `proto.field` declaration order, not alphabetical / number order. Add round-trip tests for every fixture. |
+| Dynamic encode produces non-canonical wire bytes vs the typed encoder, breaking byte-equivalence tests. | Iterate the `BTreeMap<u32, ValueOrUnknown>` storage in field-number order — interleaving known and unknown fields naturally. This is what buffa's typed encoder produces too; matches prost-reflect (`vendors/prost-reflect/prost-reflect/src/dynamic/message.rs`). |
 | `DescriptorPool` mutation racing with active `DynamicMessage` references. | `DynamicMessage` clones the pool's `Arc` on construction; mutations on one pool clone are copy-on-write thanks to `Arc::make_mut`. Document explicitly. |
-| JSON Any encoding requires `TypeRegistry` to resolve the embedded type. | Provide a default `TypeRegistry` populated from the same `DescriptorPool` the `DynamicMessage` came from, with a hook to override. |
-| WKTs (Timestamp, Duration, FieldMask, …) have non-trivial JSON mappings. | Lift the mapping logic from `buffa::json_helpers` where possible (already maintained by upstream); patch only what's missing. |
+| JSON `Any` resolution against an unconfigured registry. | Use `dyn_msg.parent_pool().get_message_by_name(...)` with no separate registry knob — same as prost-reflect (`vendors/prost-reflect/prost-reflect/src/dynamic/serde/ser/wkt.rs:64-68`). If the type isn't in the pool, surface a serde error rather than silently dropping. |
+| WKTs (Timestamp, Duration, FieldMask, …) have non-trivial JSON mappings. | Lift logic from `buffa::json_helpers` where it exists; the WKTs not covered by buffa (`Struct`, `Value`, `ListValue`, `Any`) need ~20 lines each — the proto3 JSON spec specifies them precisely. |
 | Editions semantics drift between `protoc` versions. | Pin `PROTOC_VERSION` in CI; conformance tests gated on the pinned version. Don't try to be more clever than the descriptor — when `FeatureSet` is ambiguous, behave as if proto2. |
 | Performance regressions on the typed (Phase 1) hot path from new code in `buffa-reflect`. | Phase 2a goes behind a `dynamic` cargo feature (default on). Consumers who don't want it `default-features = false`. Phase 1 functionality remains in the always-on slice. |
 | The `grpc.reflection.v1` shim depends on `tonic` and a transport. | Live in a separate crate with no workspace tie-in. Same pattern as `tonic-reflection`. |
 
 ## Out of scope, captured for future work
 
-1. **`DynamicMessage::set_extension` / `Extension` runtime descriptor support** beyond what falls out for free. proto2 extensions reflected through `descriptor_proto()` are readable; first-class get/set is its own spec.
-2. **Streaming JSON encode/decode** (`io::Read`/`io::Write` based) — `serde_json::to_writer` / `from_reader` work, but a true streaming-without-allocation path (à la `simd-json`) is its own project.
+1. **`DynamicMessage::set_extension` / `Extension` runtime descriptor support** beyond what falls out for free. The `FieldDescriptorLike` trait in Phase 2a (§2 of dynamic-design.md) is plumbed so that adding `ExtensionDescriptor` later is purely additive.
+2. **Streaming JSON encode/decode** (`io::Read`/`io::Write` based) — `serde_json::to_writer` / `from_reader` work, but a true streaming-without-allocation path is its own project.
 3. **`MessageView`-flavored `DynamicMessage`** — `DynamicMessageView<'a>` that borrows from a wire buffer. Phase 2a is owned-only; views can be a Phase 3 add-on.
-4. **`prost-reflect`-compatible `ReflectMessage::transcode_to_dynamic` performance.** prost-reflect uses unsafe specialization to avoid the encode/decode round-trip in some cases; we explicitly stay safe-Rust at the cost of a single round-trip.
+4. **`prost-reflect`-compatible specialization** for `transcode_to_dynamic` to avoid the wire round-trip on typed sources. We stay in safe Rust at the cost of one round-trip; specialization is an optimization, not a correctness concern.
 
 ## Migration notes for downstream consumers
 
-- The `dynamic` feature is added with `default-features = ["derive", "dynamic"]`. Existing downstream consumers continue to work unchanged.
-- `ReflectMessage` gains two new methods. They are provided via default impls (round-trip through `encode_to_vec`/`decode`), so downstream impls written by hand continue to compile.
-- `buffa-reflect-build` learns no new options for Phase 2a-c — the build artifact is unchanged. Phase 2e adds a `generate_view_reflection` knob (default off until view types stabilize on the trait).
+- Cargo features:
+  - `derive` (default-on, unchanged) — proc-macro derive.
+  - `dynamic` (new, default-on) — `DynamicMessage`, `Value`, `MapKey`, `transcode_to_dynamic`.
+  - `serde` (new, opt-in) — proto3 JSON via serde. Pulls in `serde`, `base64`, `serde-value`.
+  - `text-format` (new, opt-in) — textproto via `logos`.
+  Feature names match prost-reflect (`vendors/prost-reflect/prost-reflect/Cargo.toml:23-27`) so cross-ecosystem migration docs are mechanical.
+- `ReflectMessage` gains exactly **one** new method, `transcode_to_dynamic(&self) -> DynamicMessage`, with a default impl (encode + decode round-trip). Downstream impls written by hand continue to compile.
+- `DynamicMessage` itself implements `ReflectMessage`, with `transcode_to_dynamic` short-circuited to `self.clone()` — generic code over `T: ReflectMessage` works uniformly on both typed and dynamic.
+- The reverse direction (DynamicMessage → typed) lives on `DynamicMessage::transcode_to::<T>() -> Result<T, _>`, not on the trait — typed-target methods belong on the dynamic side.
+- `buffa-reflect-build` learns no new options for Phase 2a–c — the build artifact is unchanged. Phase 2e adds a `generate_view_reflection` knob (default off until view types stabilize on the trait).

@@ -5,7 +5,9 @@ Companion to [phase-2 PRD](./buffa-reflect-phase2-prd.md). This document covers 
 Pre-reads:
 - [buffa-reflect Phase 1 design](./buffa-reflect-design.md) — descriptor pool, handles, validation
 - [docs/research/buffa-architecture.md](../docs/research/buffa-architecture.md) — buffa's wire-encoding surface
-- prost-reflect's `DynamicMessage` source for shape inspiration (see `vendors/prost-reflect/`)
+- prost-reflect source (`vendors/prost-reflect/prost-reflect/src/dynamic/`) — the reference implementation; this design follows its choices closely so consumers migrating between the two ecosystems find the same shape.
+
+> **Note on the audit.** An earlier draft of this spec proposed a `Vec<Option<Value>>` storage model. After auditing the prost-reflect source — where `BTreeMap<u32, ValueOrUnknown>` is used, with a `Taken` sentinel for draining iterators, a `FieldDescriptorLike` trait that unifies fields and extensions, and a dual `set_field`-panics / `try_set_field`-returns-`Result` API — the model below was revised to track those choices. The reasoning is captured under "Decisions revised after the audit" in §15.
 
 ---
 
@@ -14,7 +16,9 @@ Pre-reads:
 ```rust
 // crates/buffa-reflect/src/lib.rs
 #[cfg(feature = "dynamic")]
-pub use crate::dynamic::{DynamicError, DynamicMessage, MapKey, SetFieldError, Value};
+pub use crate::dynamic::{
+    DynamicMessage, MapKey, SetFieldError, UnknownField, UnknownFieldSet, Value,
+};
 ```
 
 ```rust
@@ -22,98 +26,103 @@ pub use crate::dynamic::{DynamicError, DynamicMessage, MapKey, SetFieldError, Va
 pub trait ReflectMessage: ::buffa::Message {
     fn descriptor(&self) -> MessageDescriptor;
 
-    /// Phase 2 — encode `self` and decode it as a `DynamicMessage` against
-    /// `self.descriptor()`. Default implementation is a single round-trip
-    /// through `buffa::Message::encode_to_vec`. Hand-written specializations
-    /// can short-circuit when allocator-free traversal is needed; we don't
-    /// ship one, but the trait shape doesn't preclude one.
+    /// Transcode `self` to a [`DynamicMessage`].
+    ///
+    /// Default impl encodes `self` and decodes the bytes against
+    /// `self.descriptor()`. The cost is one wire round-trip — accept-
+    /// able for the common case; specialisations may override (e.g.
+    /// `DynamicMessage::transcode_to_dynamic` returns `self.clone()`).
     #[cfg(feature = "dynamic")]
-    fn transcode_to_dynamic(&self) -> DynamicMessage {
+    fn transcode_to_dynamic(&self) -> DynamicMessage
+    where
+        Self: Sized,
+    {
         let descriptor = self.descriptor();
         let bytes = ::buffa::Message::encode_to_vec(self);
-        DynamicMessage::decode(descriptor, &bytes)
-            .expect("buffa-reflect: round-trip transcode_to_dynamic must succeed for a self-encoded message")
-    }
-
-    /// Phase 2 — encode `dyn_msg` and decode as `Self`. The dynamic
-    /// message's descriptor is required to match `Self`'s; mismatch
-    /// produces `DynamicError::TypeMismatch`.
-    #[cfg(feature = "dynamic")]
-    fn from_dynamic(dyn_msg: &DynamicMessage) -> Result<Self, DynamicError>
-    where
-        Self: ::buffa::Message + Default,
-    {
-        // Default impl: validate FQN, encode, decode.
+        DynamicMessage::decode(descriptor, bytes.as_slice())
+            .expect("buffa-reflect: a self-encoded message must decode")
     }
 }
 ```
 
 ```rust
-// crates/buffa-reflect/src/dynamic.rs (Phase 2 — new module)
-pub struct DynamicMessage { /* … */ }
+// crates/buffa-reflect/src/dynamic/mod.rs (Phase 2 — new)
+pub struct DynamicMessage {
+    desc: MessageDescriptor,
+    fields: DynamicMessageFieldSet,  // pub(crate)
+}
 
 impl DynamicMessage {
-    pub fn new(descriptor: MessageDescriptor) -> Self;
+    pub fn new(desc: MessageDescriptor) -> Self;
     pub fn descriptor(&self) -> &MessageDescriptor;
     pub fn parent_pool(&self) -> DescriptorPool;
 
-    pub fn decode(descriptor: MessageDescriptor, bytes: &[u8]) -> Result<Self, DynamicError>;
-    pub fn decode_with_options(
-        descriptor: MessageDescriptor,
-        bytes: &[u8],
+    // ── decode ────────────────────────────────────────────────
+    pub fn decode<B: ::buffa::bytes::Buf>(desc: MessageDescriptor, buf: B) -> Result<Self, ::buffa::DecodeError>;
+    pub fn decode_with_options<B: ::buffa::bytes::Buf>(
+        desc: MessageDescriptor,
+        buf: B,
         opts: ::buffa::DecodeOptions,
-    ) -> Result<Self, DynamicError>;
-    pub fn merge_from_slice(&mut self, bytes: &[u8]) -> Result<(), DynamicError>;
+    ) -> Result<Self, ::buffa::DecodeError>;
+    pub fn merge<B: ::buffa::bytes::Buf>(&mut self, buf: B) -> Result<(), ::buffa::DecodeError>;
 
+    // ── encode ────────────────────────────────────────────────
+    pub fn encoded_len(&self) -> usize;
+    pub fn encode<B: ::buffa::bytes::BufMut>(&self, buf: &mut B) -> Result<(), ::buffa::EncodeError>;
     pub fn encode_to_vec(&self) -> Vec<u8>;
     pub fn encode_to_bytes(&self) -> ::buffa::bytes::Bytes;
-    pub fn compute_size(&self) -> u32;
-    pub fn write_to<B: ::buffa::bytes::BufMut>(&self, buf: &mut B);
 
-    // ── inspection ────────────────────────────────────────────
-    pub fn fields(&self) -> impl Iterator<Item = (FieldDescriptor, Cow<'_, Value>)> + '_;
-    pub fn populated_fields(&self) -> impl Iterator<Item = (FieldDescriptor, &Value)> + '_;
+    // ── fast-path conversions ─────────────────────────────────
+    pub fn transcode_from<T: ::buffa::Message>(&mut self, value: &T) -> Result<(), ::buffa::DecodeError>;
+    pub fn transcode_to<T: ::buffa::Message + Default>(&self) -> Result<T, ::buffa::DecodeError>;
+
+    // ── inspection / iteration ────────────────────────────────
+    pub fn fields(&self) -> impl Iterator<Item = (FieldDescriptor, &Value)> + '_;
+    pub fn iter_with_options<'a>(
+        &'a self,
+        include_default: bool,
+        index_order: bool,
+    ) -> impl Iterator<Item = (FieldDescriptor, Cow<'a, Value>)> + 'a;
 
     pub fn has_field(&self, field: &FieldDescriptor) -> bool;
-    pub fn has_field_by_name(&self, name: &str) -> bool;
-    pub fn has_field_by_number(&self, number: u32) -> bool;
-
     pub fn get_field(&self, field: &FieldDescriptor) -> Cow<'_, Value>;
-    pub fn get_field_by_name(&self, name: &str) -> Option<Cow<'_, Value>>;
-    pub fn get_field_by_number(&self, number: u32) -> Option<Cow<'_, Value>>;
-
     pub fn get_field_mut(&mut self, field: &FieldDescriptor) -> &mut Value;
 
-    // ── mutation ──────────────────────────────────────────────
-    pub fn set_field(
-        &mut self,
-        field: &FieldDescriptor,
-        value: Value,
-    ) -> Result<(), SetFieldError>;
-    pub fn set_field_by_name(
-        &mut self,
-        name: &str,
-        value: Value,
-    ) -> Result<(), SetFieldError>;
-    pub fn set_field_by_number(
-        &mut self,
-        number: u32,
-        value: Value,
-    ) -> Result<(), SetFieldError>;
+    pub fn has_field_by_name(&self, name: &str) -> bool;
+    pub fn get_field_by_name(&self, name: &str) -> Option<Cow<'_, Value>>;
+    pub fn get_field_by_name_mut(&mut self, name: &str) -> Option<&mut Value>;
+
+    pub fn has_field_by_number(&self, number: u32) -> bool;
+    pub fn get_field_by_number(&self, number: u32) -> Option<Cow<'_, Value>>;
+    pub fn get_field_by_number_mut(&mut self, number: u32) -> Option<&mut Value>;
+
+    // ── mutation: dual API ────────────────────────────────────
+    /// Validates with `debug_assert!` (zero cost in release builds).
+    /// Panics on type mismatch in debug. Use `try_set_field` if the
+    /// value type is data-driven.
+    pub fn set_field(&mut self, field: &FieldDescriptor, value: Value);
+    pub fn try_set_field(&mut self, field: &FieldDescriptor, value: Value) -> Result<(), SetFieldError>;
+    pub fn set_field_by_number(&mut self, number: u32, value: Value);
+    pub fn try_set_field_by_number(&mut self, number: u32, value: Value) -> Result<(), SetFieldError>;
+    pub fn set_field_by_name(&mut self, name: &str, value: Value);
+    pub fn try_set_field_by_name(&mut self, name: &str, value: Value) -> Result<(), SetFieldError>;
 
     pub fn clear_field(&mut self, field: &FieldDescriptor);
-    pub fn clear_field_by_name(&mut self, name: &str) -> bool;
-    pub fn clear_field_by_number(&mut self, number: u32) -> bool;
+    pub fn clear_field_by_name(&mut self, name: &str);
+    pub fn clear_field_by_number(&mut self, number: u32);
 
     // ── unknown fields ────────────────────────────────────────
-    pub fn unknown_fields(&self) -> &::buffa::UnknownFields;
-    pub fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields;
+    pub fn unknown_fields(&self) -> impl Iterator<Item = (u32, &UnknownFieldSet)> + '_;
+    pub fn drain_unknown_fields(&mut self) -> impl Iterator<Item = (u32, UnknownFieldSet)> + '_;
 }
+
+/// `DynamicMessage` is itself a `ReflectMessage`; `transcode_to_dynamic`
+/// short-circuits to `self.clone()`, avoiding the wire round-trip.
+impl ReflectMessage for DynamicMessage { /* … */ }
 ```
 
 ```rust
-#[derive(Clone, Debug, PartialEq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Bool(bool),
     I32(i32),
@@ -124,15 +133,32 @@ pub enum Value {
     F64(f64),
     String(String),
     Bytes(::buffa::bytes::Bytes),
-    /// Enum value as a number — may be `Unknown` from a forward-compat decode.
+    /// Enum variant by number. `i32` rather than a typed variant so
+    /// forward-compat decoding (unknown enum number) round-trips
+    /// losslessly — proto3's "open enum" semantics.
     EnumNumber(i32),
     Message(DynamicMessage),
     List(Vec<Value>),
-    Map(BTreeMap<MapKey, Value>),
+    Map(HashMap<MapKey, Value>),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
-#[non_exhaustive]
+impl Value {
+    pub fn default_value(kind: &Kind) -> Self;
+    pub fn default_value_for_field(field: &FieldDescriptor) -> Self;
+    pub fn is_default(&self, kind: &Kind) -> bool;
+    /// Recursive validation: for `List`, every element validated against
+    /// the list's Kind; for `Map`, key against the key kind, value against
+    /// the value kind.
+    pub fn is_valid_for_field(&self, field: &FieldDescriptor) -> bool;
+
+    // Typed accessors — Some(_) iff the variant matches.
+    pub fn as_bool(&self) -> Option<bool>;
+    pub fn as_i32(&self) -> Option<i32>;
+    pub fn as_i64(&self) -> Option<i64>;
+    // … (one per scalar / enum / message / list / map variant, plus _mut variants)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MapKey {
     Bool(bool),
     I32(i32),
@@ -140,298 +166,362 @@ pub enum MapKey {
     U32(u32),
     U64(u64),
     String(String),
+    // No Bytes: map<bytes, _> is forbidden by the proto spec.
+    // No floats: map keys cannot be floats.
 }
 ```
 
 ```rust
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum DynamicError {
-    #[error("decoding {full_name}: {source}")]
-    Decode {
-        full_name: String,
-        #[source]
-        source: ::buffa::DecodeError,
-    },
-    #[error(
-        "transcode mismatch: expected `{expected}`, got `{actual}`"
-    )]
-    TypeMismatch { expected: String, actual: String },
-    #[error("dynamic message validation: {0}")]
-    Validation(String),
-}
-
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SetFieldError {
-    #[error("no field named `{0}` in `{1}`")]
-    UnknownField(String, String),
-    #[error("no field with number {0} in `{1}`")]
-    UnknownNumber(u32, String),
-    #[error(
-        "type mismatch on `{full_name}`: field expects {expected}, got {actual}"
-    )]
-    TypeMismatch {
-        full_name: String,
-        expected: &'static str,
-        actual: &'static str,
+    /// The field name / number resolution returned no descriptor.
+    NotFound,
+    /// `Value::is_valid_for_field(&value, field)` returned false.
+    InvalidType {
+        field: FieldDescriptor,
+        value: Value,
     },
-    #[error("enum number {value} is not a declared variant of `{enum_name}`")]
-    InvalidEnumNumber { enum_name: String, value: i32 },
 }
 ```
 
-That's the public surface. Everything else in this document is the *why* behind these signatures and the *how* of the implementation.
+That's the public surface. The rest of this document is the *why* behind these signatures and the *how* of the implementation.
 
 ---
 
 ## 2. Internal storage
 
+Mirroring prost-reflect (`vendors/prost-reflect/prost-reflect/src/dynamic/fields.rs`):
+
 ```rust
-pub struct DynamicMessage {
-    descriptor: MessageDescriptor,
-    /// Slots aligned to `descriptor.fields()` position. `None` means
-    /// "no value present"; for repeated and map fields the slot is
-    /// always `Some(Value::List(_))` / `Some(Value::Map(_))` once the
-    /// field has been touched (we eagerly initialise on first decode or
-    /// first mutation).
-    slots: Vec<Option<Value>>,
-    /// One entry per oneof. For an inactive oneof, the value is `None`.
-    /// For an active oneof, the value is the field-position (within the
-    /// owning message's field list) of the active member.
-    oneof_active: Vec<Option<u32>>,
-    /// Bytes the descriptor doesn't account for; preserved for
-    /// round-trip fidelity, identical convention to buffa's generated
-    /// `__buffa_unknown_fields` storage.
-    unknown_fields: ::buffa::UnknownFields,
+#[derive(Default, Debug, Clone, PartialEq)]
+pub(super) struct DynamicMessageFieldSet {
+    fields: BTreeMap<u32, ValueOrUnknown>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum ValueOrUnknown {
+    /// A protobuf value with a known field type.
+    Value(Value),
+    /// One or more unknown fields, keyed by the original wire number.
+    Unknown(UnknownFieldSet),
+    /// Sentinel used during draining iteration to prevent re-visit.
+    Taken,
 }
 ```
 
-### Why `Vec<Option<Value>>` instead of `HashMap<u32, Value>`
+### Why `BTreeMap<u32, ValueOrUnknown>` (revised from the earlier `Vec<Option<Value>>` proposal)
 
-prost-reflect stores fields in a `BTreeMap<u32, Value>`. We diverge:
+The earlier draft argued for `Vec<Option<Value>>` aligned to descriptor field positions: O(1) lookup, no sparse-storage overhead, predictable memory shape. The audit talked me out of it. Specifically:
 
-- Position-indexed access is O(1) and cache-friendly (contiguous storage).
-- The descriptor already enforces that field positions are dense (they're array indices into `MessageEntry::fields`). Storage cost per slot is `size_of::<Option<Value>>()` ≈ 32 bytes — for messages with N fields, the total is `32 * N` bytes regardless of how many fields are populated, vs `48–96 bytes per populated field` for a HashMap. The break-even is around 30% population; **almost every real proto message exceeds 30% populated fields on the wire**, so we win on the common case.
-- For **very wide messages** (e.g. `google.protobuf.FileOptions` with 50+ fields, of which a typical proto sets 0–2): the overhead is real but small (~1.6 KB). Acceptable; if profiling later shows it matters, we can switch to a sparse-when-large adaptive scheme.
-- Lookups by name/number go through `MessageDescriptor::get_field_by_*` (already O(1) via `by_name`/`by_number` HashMaps in `MessageEntry`) → field's `index` → direct `slots[index]` access. Two hops, both O(1).
+1. **Unknown fields belong on the same axis as known fields.** Wire data is "field number → value". Unknown fields don't have a descriptor index, so a position-aligned vector cannot hold them. prost-reflect handles this by interleaving `Value` and `Unknown(UnknownFieldSet)` entries in the same map keyed by `u32` (`fields.rs:39-51`). On encode, iteration is in field-number order — known and unknown emit interleaved, naturally producing canonical wire output.
+2. **Field-number-sorted iteration is the natural canonical order.** Most consumers want stable serialization; a `BTreeMap` is sorted by construction. (For textproto and JSON we also offer index-order via a separate option — see §6.)
+3. **Sparse messages are common.** Wide messages (`google.protobuf.FileOptions` has 50+ fields, of which a typical proto sets 0–2) pay 32 × N bytes per `Vec<Option<Value>>` regardless of population. With a `BTreeMap`, the cost scales with the populated count. The constant-factor difference per populated field is small (~80 bytes for a BTreeMap node vs 32 bytes for an Option<Value> slot), but the absolute waste of the dense Vec on wide-and-sparse messages is meaningful.
+4. **Migration from prost-reflect.** Sharing the storage model means consumers can mechanically translate code between the two crates. Less surprise.
 
-### Why a separate `oneof_active` vector
+The cost we accept: O(log N) lookup vs O(1). For typical proto messages (N < 50 fields), this is single-digit comparisons — neither approach is a hot-path bottleneck once the descriptor lookup itself (which is also O(1) via `MessageEntry::by_number`) is amortised.
 
-Setting a field that belongs to a oneof must **clear all other members of that oneof**. Without a side index we'd have to iterate `descriptor.oneofs()[oi].fields()` on every set. With it, we read `oneof_active[oi]` (Some(prev_field_pos)), then `slots[prev_field_pos] = None`, then write the new value. Two array writes vs O(K) where K is oneof arity.
+### `ValueOrUnknown::Taken` sentinel
 
-### Defaulting: how `get_field` synthesizes values
+`Taken` is used by **draining** iterators (e.g., `drain_unknown_fields`) to keep the entry in the BTreeMap (preserving the key order) while the value has been moved out. Without this sentinel, draining would either remove entries on the fly (which mutates the iterated structure) or require collecting keys first (a double-walk). Same idiom as `prost-reflect/src/dynamic/fields.rs:46`.
 
-`get_field` returns a `Cow<'_, Value>`. When the slot is populated, we return `Cow::Borrowed(&Value)`. When unset, we synthesize the proto-default and return `Cow::Owned`:
+### `FieldDescriptorLike` trait
 
-| Field shape | Default synthesized when slot is `None` |
-| --- | --- |
-| singular scalar | `Value::I32(0)` / `Value::Bool(false)` / `Value::String(String::new())` etc. |
-| singular enum | `Value::EnumNumber(0)` |
-| singular message | `Value::Message(DynamicMessage::new(submessage_descriptor))` |
-| repeated scalar | `Value::List(Vec::new())` |
-| map | `Value::Map(BTreeMap::new())` |
+prost-reflect abstracts the `set` / `get` / `has` / `clear` operations over a `FieldDescriptorLike` trait that both `FieldDescriptor` and `ExtensionDescriptor` implement (`fields.rs:17-35`). This avoids duplicating the entire mutation surface for extensions. We adopt the same trait shape; for Phase 2a, only `FieldDescriptor` implements it. Extensions (a future phase) drop in without changing the storage layer.
 
-Defaults for **proto2** singular fields with explicit `default_value = ...` honor the descriptor's value (parsed lazily via `FieldDescriptorProto::default_value`).
+```rust
+pub(crate) trait FieldDescriptorLike: fmt::Debug {
+    fn number(&self) -> u32;
+    fn default_value(&self) -> Value;
+    fn is_default_value(&self, value: &Value) -> bool;
+    fn is_valid(&self, value: &Value) -> bool;
+    fn containing_oneof(&self) -> Option<OneofDescriptor>;
+    fn supports_presence(&self) -> bool;
+    fn kind(&self) -> Kind;
+    fn is_list(&self) -> bool;
+    fn is_map(&self) -> bool;
+    fn is_packed(&self) -> bool;
+    fn is_packable(&self) -> bool;
+    /// "has" semantics: presence-tracking fields → set bit; otherwise
+    /// → non-default value.
+    fn has(&self, value: &Value) -> bool {
+        self.supports_presence() || !self.is_default_value(value)
+    }
+}
+```
 
-### `populated_fields` vs `fields`
+### Defaulting: `get_field` returns `Cow<'_, Value>`
 
-- `fields()` — every field in the descriptor, paired with its current value (synthesized defaults for unset fields). Useful for serialization / "show me everything."
-- `populated_fields()` — only fields with explicit values present (`has_field` semantics). Useful for "show me what was actually set" (proto3 omits-default-on-encode is the most common case).
+When the slot is populated, `get_field` returns `Cow::Borrowed(&Value)`. When unset, it synthesises the field's default via `desc.default_value()` and returns `Cow::Owned`. Identical pattern to `prost-reflect/src/dynamic/fields.rs:73-78`.
+
+### Default-value caching is **eager at pool-build time**
+
+Phase 1 deferred proto2 explicit `default_value` parsing. Phase 2a moves it to pool-build time, mirroring `prost-reflect/src/descriptor/build/resolve.rs:627-698`:
+
+- For each `FieldDescriptorProto::default_value` string, parse once and store the resulting `Value` on the `FieldEntry`.
+- Parser handles: signed/unsigned int (decimal, octal, hex), float (incl. `inf`, `-inf`, `nan`), bool literals, C-escaped strings, byte string with octal/hex escapes, and enum-by-name (looked up in the field's enum descriptor).
+- Bad defaults accumulate on a pool-level error list (matches prost-reflect's "all errors at once" model). `DescriptorPool::decode` returns an `Err` aggregating all such failures rather than the first one — better diagnostics.
+
+This is a Phase 1 amend on `FieldEntry`: one `default: OnceLock<Value>` field plus the parser. ~150 LOC in `pool_build.rs`. No public-API change.
 
 ---
 
 ## 3. Wire encode
 
-We mirror the buffa codec contract: a two-pass `compute_size` → `write_to`. The dispatch is descriptor-driven.
+Two-pass `encoded_len` → `encode`, mirroring buffa's `Message` contract.
 
 ```rust
 impl DynamicMessage {
-    pub fn compute_size(&self) -> u32 {
-        let mut cache = ::buffa::SizeCache::new();
-        compute_message_size(self, &mut cache)
+    pub fn encoded_len(&self) -> usize {
+        let mut size = 0;
+        for (field, value) in self.fields.iter_known() {
+            size += encode_value_len(&field, value);
+        }
+        for (number, unknown) in self.fields.iter_unknown() {
+            size += unknown.encoded_len(number);
+        }
+        size
     }
 
-    pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut cache = ::buffa::SizeCache::new();
-        let size = compute_message_size(self, &mut cache);
-        let mut buf = Vec::with_capacity(size as usize);
-        write_message_to(self, &mut cache, &mut buf);
-        buf
+    pub fn encode<B: BufMut>(&self, buf: &mut B) -> Result<(), EncodeError> {
+        for entry in self.fields.iter_in_number_order() {
+            match entry {
+                Entry::Field(field, value) => encode_value(&field, value, buf)?,
+                Entry::Unknown(number, unknown) => unknown.encode(number, buf)?,
+            }
+        }
+        Ok(())
     }
 }
 ```
 
-### Why two-pass
+### Why interleaved iteration
 
-buffa's wire format requires the **length prefix** of every length-delimited sub-message to be known *before* writing its body. The standard pattern (also used by prost) is to compute and cache sub-sizes, then write with the cached values. `SizeCache` is an existing buffa primitive — we re-use it verbatim.
+On the wire, fields are tag-prefixed integers. There's no requirement to sort, but **canonical** output (and the byte-equivalence test) requires stable order. `BTreeMap<u32, _>` already iterates in number order; interleaving `Value` and `Unknown` in that single iteration means encode preserves the original wire order observed on decode. prost-reflect does the same (`vendors/prost-reflect/prost-reflect/src/dynamic/message.rs:62-244`).
 
-### Field iteration order
+### Per-`Kind` encoder dispatch
 
-Critical: emit fields in the **order the descriptor lists them** (`MessageEntry::fields[i].proto_field_index` order). This is the same order buffa's generated code uses and what `protoc --decode_raw` will produce. Deviating breaks the byte-equivalence test in §10.
+Single big match per `Kind × Value × cardinality` combination; no dispatch table. Reasoning: the match arms are short (call into a buffa primitive) and `match` lets the compiler emit the optimal jump table. Same pattern as prost-reflect (`message.rs:93-244`).
 
-### Per-Kind encoder dispatch
+### Packed encoding decision is **per-encode**, not pre-computed
 
-Each `KindRef` maps to one of buffa's encoder primitives. The dispatch lives in a `encode_value(field_desc, value, cache, buf)` function — table here, code in `dynamic_codec.rs`:
+`field.is_packed()` is checked at encode time; no caching. For repeated scalars, packed emits a single tag with `LengthDelimited` wire type and concatenated values; non-packed emits one tag-and-value per element. Negligible cost (`is_packed` is a flag on the FieldEntry); matches prost-reflect's choice (`message.rs:141-244`).
 
-| `KindRef` | Wire type | Encoder |
-| --- | --- | --- |
-| `Double` | `Bit64` | `encoding::encode_double` |
-| `Float` | `Bit32` | `encoding::encode_float` |
-| `Int32`/`Int64` | `Varint` | `encoding::encode_int32` / `int64` |
-| `Uint32`/`Uint64` | `Varint` | `encoding::encode_uint32` / `uint64` |
-| `Sint32`/`Sint64` | `Varint` (zigzag) | `encoding::encode_sint32` / `sint64` |
-| `Fixed32`/`Fixed64` | `Bit32`/`Bit64` | `encoding::encode_fixed32` / `fixed64` |
-| `Sfixed32`/`Sfixed64` | `Bit32`/`Bit64` | `encoding::encode_sfixed32` / `sfixed64` |
-| `Bool` | `Varint` | `encoding::encode_bool` |
-| `String` | `LengthDelimited` | `types::encode_string` |
-| `Bytes` | `LengthDelimited` | `types::encode_bytes` |
-| `Enum` | `Varint` | `types::encode_int32` (the i32 number) |
-| `Message` | `LengthDelimited` | `compute_size` recursively + length-prefixed body |
+### Map field encoding
 
-### Repeated fields & packed encoding
+A `map<K, V>` field encodes as a repeated message of synthetic `Entry { K key = 1; V value = 2; }`. We synthesise the encoding directly (not by instantiating an entry `DynamicMessage` per pair) — a few percent saving on map-heavy messages.
 
-For repeated scalars where `field.is_packed()` is true, emit a single tag with `LengthDelimited` wire type and a single body containing concatenated values (no per-value tags). This matches buffa's generated code.
-
-For non-packed repeated, emit one tag-and-value per element.
-
-For repeated messages: always one tag-and-length-delimited-body per element.
-
-### Map fields
-
-A `map<K, V>` field encodes as a repeated message of synthetic `XxxEntry { K key = 1; V value = 2; }`. We synthesize the encoding ourselves rather than instantiating an entry `DynamicMessage` per entry — cheaper. The encoding loop:
-
-```text
-for (k, v) in map:
-  cache_slot = cache.reserve()
-  inner_size = size_of_key(k, key_kind) + size_of_value(v, value_kind)
-  cache.set(cache_slot, inner_size)
-  write tag(field_number, LengthDelimited)
-  write varint(inner_size)
-  write tag(1, key_wire_type); write key bytes
-  write tag(2, value_wire_type); write value bytes
-```
+For deterministic output we need stable map iteration. **However**, our `Value::Map` uses `HashMap<MapKey, Value>` to match prost-reflect's choice (`vendors/prost-reflect/prost-reflect/src/dynamic/mod.rs:76`). Wire conformance does not require map ordering, but textproto / JSON tests do. Encoding sorts entries by key on the fly when `MapKey` admits ordering (every `MapKey` variant does — both `MapKey` and the underlying types are `Ord`). Cost: one `Vec<&MapKey>` allocation + sort per encoded map. Acceptable.
 
 ### Oneof emission
 
-A oneof contributes **at most one tag** to the wire, corresponding to the active member. We read `oneof_active[oneof_index]`, look up the field, and emit it normally (its `proto_field_index` placement in the iteration order doesn't matter — protoc accepts any ordering, but for byte-equivalence we keep the descriptor's order).
-
-### Unknown fields
-
-After all known fields are written, append `unknown_fields.write_to(buf)` (buffa primitive). This preserves any tags the descriptor doesn't recognize, in the order they were observed on decode.
+A oneof contributes at most one tag to the wire — the active member. Because oneof members have distinct field numbers and live in the same `BTreeMap`, no special handling: the active member appears at its natural position; cleared siblings are simply absent. Same as prost-reflect.
 
 ---
 
 ## 4. Wire decode
 
 ```rust
-pub fn merge_from_slice(&mut self, bytes: &[u8]) -> Result<(), DynamicError> {
-    let mut buf = bytes;
-    decode_into(self, &mut buf, ::buffa::RECURSION_LIMIT)
+pub fn merge<B: Buf>(&mut self, mut buf: B) -> Result<(), DecodeError> {
+    let depth_limit = ::buffa::RECURSION_LIMIT;
+    while buf.has_remaining() {
+        let tag = ::buffa::encoding::Tag::decode(&mut buf)?;
+        match self.desc.get_field(tag.field_number()) {
+            Some(field) => self.merge_field(&field, tag.wire_type(), &mut buf, depth_limit)?,
+            None => self.fields.add_unknown(tag.field_number(),
+                ::buffa::encoding::decode_unknown_field(tag, &mut buf, depth_limit)?),
+        }
+    }
+    Ok(())
 }
 ```
 
-The decoder loops over wire tags and dispatches by field number:
+### Wire-type tolerance
 
-1. `let tag = encoding::Tag::decode(&mut buf)?;`
-2. Look up the field by number via `descriptor.get_field_by_number(tag.field_number())`:
-   - **Hit**: dispatch by the field's `KindRef` and `cardinality`.
-   - **Miss**: append to `unknown_fields` via `encoding::decode_unknown_field`.
-3. Validate the tag's wire type matches what the field expects; if not → `DynamicError::Decode { source: WireTypeMismatch }`. Exception: a packed-encoded repeated scalar may legally appear as `LengthDelimited` even when its declared wire type is `Varint` — handle that case explicitly (reads a length-prefixed packed body and decodes individual elements).
-4. For oneof members: when we set the slot, also set `oneof_active[oi] = Some(field_pos)` and clear any previously-active member of the same oneof.
-5. Recursion: pass `depth - 1` into recursive sub-message decoding; bail with `RecursionLimitExceeded` at zero. Mirrors buffa's existing recursion-limit pattern.
+For repeated scalars, both `LengthDelimited` (packed body) and the field's natural wire type (one-tag-per-value) are accepted regardless of the descriptor's `is_packed()` flag — protoc emits either depending on the source proto's syntax/edition. We dispatch by observed wire type, not by descriptor declaration. Matches prost-reflect's behaviour (`message.rs:35-59`).
 
 ### Forward-compat enum decoding
 
-An enum field whose wire value is unknown to the descriptor is stored as `Value::EnumNumber(raw)` — *not* dropped. This matches proto3's "open enum" semantics and what buffa generates (`EnumValue::Unknown(raw)`). Round-trip through `encode_to_vec` re-emits the unknown number byte-identically.
+Unknown enum numbers are stored as `Value::EnumNumber(raw)` rather than dropped. Re-encoding emits the same number byte-identically. Matches proto3's open-enum semantics and what buffa's typed code does with `EnumValue::Unknown(raw)`.
+
+### Recursion limit
+
+Default `::buffa::RECURSION_LIMIT` (100). Configurable via `decode_with_options(desc, buf, DecodeOptions::new().with_recursion_limit(N))`. Bails with `DecodeError::RecursionLimitExceeded`. Mirrors buffa's typed-decode behaviour exactly so the dynamic and typed paths can't disagree on what's safe to decode.
+
+### Unknown-field merging
+
+Multiple unknown tags with the same number accumulate in a single `UnknownFieldSet` (a Vec). Insertion order preserved per number. The interleaved BTreeMap layout ensures known and unknown tags for the *same number* coexist gracefully — practical case: a message decoded against an old descriptor (some fields unknown), then merged with a new descriptor (those fields now known) results in known values overwriting unknowns at the same number, while truly-unknown numbers stay separate.
 
 ---
 
-## 5. Mutation API
-
-### `set_field` validation
-
-`set_field(field, value)` does **type validation** before mutating. The validation table:
-
-| Field's `KindRef` | Acceptable `Value` shapes |
-| --- | --- |
-| `Bool` | `Value::Bool` |
-| `I32` / `Sint32` / `Sfixed32` | `Value::I32` |
-| `I64` / `Sint64` / `Sfixed64` | `Value::I64` |
-| `U32` / `Fixed32` | `Value::U32` |
-| `U64` / `Fixed64` | `Value::U64` |
-| `F32` | `Value::F32` |
-| `F64` | `Value::F64` |
-| `String` | `Value::String` |
-| `Bytes` | `Value::Bytes` |
-| `Enum` | `Value::EnumNumber` (or `Value::I32` accepted as an alias) |
-| `Message` | `Value::Message` (whose descriptor must match the field's expected message type — or be a descendant in the same pool) |
-
-For repeated fields: `Value::List(items)`; each item validated against the field's element kind.
-
-For map fields: `Value::Map(entries)`; key validated against the map key kind, value validated against the value kind.
-
-Mismatch → `SetFieldError::TypeMismatch`. Sub-message descriptor mismatch → `SetFieldError::TypeMismatch` with `expected = "message<acme.User>", actual = "message<acme.Org>"`.
-
-### Strict vs lax enum acceptance
-
-Phase 2a accepts any `i32` for an enum-typed field — matches proto3's open-enum semantics. A future optional `set_field_strict` could reject unknown enum numbers; not in this phase.
-
-### Oneof mutation invariant
-
-Setting a field that belongs to a oneof:
-
-1. Reads `oneof_active[oi]`. If `Some(prev_field_pos)` and `prev_field_pos != new_field_pos`: `slots[prev_field_pos] = None`.
-2. Writes `slots[new_field_pos] = Some(value)`.
-3. Writes `oneof_active[oi] = Some(new_field_pos)`.
-
-`clear_field` on a oneof member: `slots[field_pos] = None`; `oneof_active[oi] = None` (only if the cleared field was the active one — which for oneof members it always is, by invariant 1 above).
-
----
-
-## 6. `ReflectMessage` extension
-
-Two new methods, both default-implemented via a wire round-trip:
+## 5. Mutation API: dual `set_field` / `try_set_field`
 
 ```rust
-#[cfg(feature = "dynamic")]
-fn transcode_to_dynamic(&self) -> DynamicMessage {
-    let descriptor = self.descriptor();
-    let bytes = ::buffa::Message::encode_to_vec(self);
-    DynamicMessage::decode(descriptor, &bytes)
-        .expect("self-encoded message must decode")
+pub fn set_field(&mut self, field: &FieldDescriptor, value: Value) {
+    self.try_set_field(field, value).unwrap()
 }
 
-#[cfg(feature = "dynamic")]
-fn from_dynamic(dyn_msg: &DynamicMessage) -> Result<Self, DynamicError>
-where
-    Self: ::buffa::Message + Default,
-{
-    let dyn_fqn = dyn_msg.descriptor().full_name();
-    let static_fqn = Self::default().descriptor().full_name().to_string();
-    if dyn_fqn != static_fqn {
-        return Err(DynamicError::TypeMismatch {
-            expected: static_fqn,
-            actual: dyn_fqn.to_string(),
-        });
+pub fn try_set_field(
+    &mut self,
+    field: &FieldDescriptor,
+    value: Value,
+) -> Result<(), SetFieldError> {
+    if value.is_valid_for_field(field) {
+        self.fields.set(field, value);
+        Ok(())
+    } else {
+        Err(SetFieldError::InvalidType { field: field.clone(), value })
     }
-    let bytes = dyn_msg.encode_to_vec();
-    Self::decode_from_slice(&bytes).map_err(|source| DynamicError::Decode {
-        full_name: static_fqn,
-        source,
-    })
 }
 ```
 
-Both impls have a single failure mode worth highlighting:
-- `transcode_to_dynamic` cannot fail — encoding our own struct yields bytes, and decoding bytes our own descriptor produced cannot mismatch wire types. The `expect` is therefore safe and documented.
-- `from_dynamic` can fail if (a) the descriptors mismatch, or (b) the dynamic message contains values that the static type's decoder rejects (e.g., a `required` field is missing in proto2). Both surface through `DynamicError`.
+The `_by_number` / `_by_name` variants additionally resolve the descriptor and return `SetFieldError::NotFound` when the lookup fails.
 
-Both are `#[cfg(feature = "dynamic")]` so the trait is unchanged when the feature is off.
+### Why dual API (not just Result)
+
+Earlier draft argued for Result-only. The audit changed my mind:
+
+- **`set_field` is the most common operation** in code that's already type-checked the value against the descriptor (e.g., a serializer that just deserialized into `Value`). Forcing `.unwrap()` at every call site is ergonomic friction.
+- **`try_set_field` exists for data-driven writes** (e.g., a UI editor where the value type may not match the field). Callers who need that branch already pay the lookup cost; checking `Result` is fine.
+- **`debug_assert!` in `fields.rs:97-100`** means the underlying validation is **free in release builds**. The `set_field` panic path only fires in debug, and never in production. This is the right ergonomic for "I've already validated" code.
+
+We adopt the same pattern: `set_field` is a thin wrapper around `try_set_field().unwrap()`, with `debug_assert!` validation at the storage layer to catch programming errors during development without paying for them in release.
+
+### Oneof mutation invariant
+
+`get_field_mut` / `set` both call `clear_oneof_fields` first (`fields.rs:81, 102, 107-114`), which iterates the oneof's siblings and clears any other active member. We mirror this — eager clearing at mutation time, not lazy at iteration time.
 
 ---
 
-## 7. `feature = "dynamic"`
+## 6. Iteration
+
+```rust
+pub fn iter_with_options<'a>(
+    &'a self,
+    include_default: bool,
+    index_order: bool,
+) -> impl Iterator<Item = (FieldDescriptor, Cow<'a, Value>)> + 'a;
+```
+
+Two orthogonal knobs, both inherited from prost-reflect (`fields.rs:147-205`):
+
+| `include_default` | Effect |
+| --- | --- |
+| `false` (the default) | Only fields with `has_field == true`. Matches "what was actually set." Used for proto3 JSON's "skip default fields" behaviour and for textproto's compact form. |
+| `true` | All fields the descriptor declares; defaults synthesised. Useful for "show me everything" debug printers. |
+
+| `index_order` | Effect |
+| --- | --- |
+| `false` (the default) | Iterate in `BTreeMap` order — i.e., field number ascending. The canonical wire order. |
+| `true` | Iterate in proto declaration order (`MessageDescriptor::fields_in_index_order()`). Useful for textproto round-trip and source-faithful debug output. |
+
+Convenience `fields()` shortcut: `iter_with_options(false, false)` — populated fields, number-ordered, the most common case.
+
+---
+
+## 7. `Value::is_valid_for_field` validation
+
+Recursive (`vendors/prost-reflect/prost-reflect/src/dynamic/mod.rs:639-670`):
+
+| Field shape | Acceptable `Value` |
+| --- | --- |
+| singular `Bool` | `Value::Bool` |
+| singular `I32`/`Sint32`/`Sfixed32` | `Value::I32` |
+| singular `I64`/`Sint64`/`Sfixed64` | `Value::I64` |
+| singular `U32`/`Fixed32` | `Value::U32` |
+| singular `U64`/`Fixed64` | `Value::U64` |
+| singular `F32` | `Value::F32` |
+| singular `F64` | `Value::F64` |
+| singular `String` | `Value::String` |
+| singular `Bytes` | `Value::Bytes` |
+| singular `Enum` | `Value::EnumNumber` (any `i32` accepted — open enum semantics) |
+| singular `Message` | `Value::Message(m)` where `m.descriptor()` shares the field's expected message descriptor (compared via `Arc::ptr_eq` on `inner`) |
+| repeated T | `Value::List(items)`; each item validated against `T` recursively |
+| `map<K, V>` | `Value::Map(entries)`; each key validated against `K` (subset of MapKey variants), each value against `V` recursively |
+
+Cross-pool message values (`Value::Message` from a different pool) are **rejected** as a type mismatch. Permissive cross-pool transcoding requires an explicit method (deferred).
+
+---
+
+## 8. `ReflectMessage` extension
+
+```rust
+pub trait ReflectMessage: ::buffa::Message {
+    fn descriptor(&self) -> MessageDescriptor;
+
+    #[cfg(feature = "dynamic")]
+    fn transcode_to_dynamic(&self) -> DynamicMessage
+    where
+        Self: Sized,
+    {
+        let descriptor = self.descriptor();
+        DynamicMessage::decode(descriptor, self.encode_to_vec().as_slice())
+            .expect("self-encoded message must decode")
+    }
+}
+```
+
+Plus `DynamicMessage`'s own `transcode_from` / `transcode_to`:
+
+```rust
+impl DynamicMessage {
+    /// Merge a typed message into this dynamic message via wire round-trip.
+    pub fn transcode_from<T: Message>(&mut self, value: &T) -> Result<(), DecodeError> {
+        self.merge(value.encode_to_vec().as_slice())
+    }
+
+    /// Convert this dynamic message into a typed value via wire round-trip.
+    pub fn transcode_to<T: Message + Default>(&self) -> Result<T, DecodeError> {
+        T::decode_from_slice(self.encode_to_vec().as_slice())
+    }
+}
+```
+
+And the special-case `impl ReflectMessage for DynamicMessage` whose `transcode_to_dynamic` returns `self.clone()` rather than the wire round-trip — saves a meaningful amount of work when generic code calls `transcode_to_dynamic()` on something that's already dynamic. Same as prost-reflect (`mod.rs:585-596`).
+
+### Why `transcode_to_dynamic` lives on the trait but `transcode_to/from` live on `DynamicMessage`
+
+- `transcode_to_dynamic(&self) -> DynamicMessage` is generic over the typed source — convenient as a trait method on every typed message.
+- `transcode_to::<T>(&self) -> Result<T, _>` is generic over the typed *target* — naturally a method on `DynamicMessage` rather than a trait.
+
+Splitting them this way matches prost-reflect's API and makes generic code uniform: any `T: ReflectMessage` (typed or dynamic) supports `t.transcode_to_dynamic()`.
+
+---
+
+## 9. Module layout
+
+```
+crates/buffa-reflect/src/
+  lib.rs            # re-exports gated on `dynamic`
+  pool.rs           # +default-value parser hook (Phase 1 amend)
+  pool_build.rs     # +eager default_value parsing (Phase 1 amend)
+  message.rs        # +default_dynamic() factory
+  field.rs          # +default_value() / is_default_value() / is_valid_for_field() helpers
+  reflect.rs        # +transcode_to_dynamic (cfg "dynamic")
+  dynamic/
+    mod.rs          # public types: DynamicMessage, Value, MapKey, SetFieldError
+    fields.rs       # DynamicMessageFieldSet (BTreeMap<u32, ValueOrUnknown>),
+                    # FieldDescriptorLike trait
+    message.rs      # encode / decode / merge dispatch
+    value.rs        # Value impls (PartialEq, From, accessors, validation)
+    unknown.rs      # UnknownField, UnknownFieldSet (mirrors buffa::UnknownFields shape)
+    defaults.rs     # default_value parser (called from pool_build at build time)
+    iter.rs         # iter_with_options + helpers
+```
+
+Module shape mirrors `vendors/prost-reflect/prost-reflect/src/dynamic/` so cross-referencing during implementation is mechanical.
+
+---
+
+## 10. Cycles, recursion, depth limits
+
+- **Cyclic message types** — `Value::Message(DynamicMessage)` heap-allocates inside the parent's `BTreeMap`; arbitrary tree depth at construction has no cost beyond the natural per-node allocation.
+- **Decode recursion** — capped at `RECURSION_LIMIT` (100), configurable via `decode_with_options`. Bails with `DecodeError::RecursionLimitExceeded`. Same default as buffa's typed code.
+- **Encode recursion** — uncapped. The user constructed the tree.
+- **Drop recursion** — for pathological depth (10⁵+) could stack-overflow. Same caveat as `Vec<Box<Vec<...>>>`. If a real workload exposes it, switch to iterative drop. Not in Phase 2a.
+
+---
+
+## 11. `feature = "dynamic"`
 
 ```toml
 # crates/buffa-reflect/Cargo.toml
@@ -441,113 +531,77 @@ derive = ["dep:buffa-reflect-derive"]
 dynamic = []
 ```
 
-`dynamic` is on by default. Consumers who want a leaner runtime (e.g., Phase-1-only typed reflection) opt out via `default-features = false, features = ["derive"]`.
-
-`dynamic` does not introduce new external deps — `Bytes`, `BTreeMap`, `Cow` are all already available (`buffa::bytes`, `std::collections`, `std::borrow`).
+Default-on. Consumers wanting Phase-1-only typed reflection opt out via `default-features = false, features = ["derive"]`. The `dynamic` feature pulls in nothing new beyond what's already available (`bytes`, `BTreeMap`, `HashMap`, `Cow` are already in scope).
 
 ---
 
-## 8. Module layout
+## 12. Performance characteristics
 
-```
-crates/buffa-reflect/src/
-  lib.rs           # re-exports gated on `dynamic`
-  pool.rs          # unchanged
-  pool_build.rs    # unchanged
-  message.rs       # +1 method: default_dynamic() -> DynamicMessage (factory)
-  field.rs         # unchanged
-  enumeration.rs   # unchanged
-  oneof.rs         # unchanged
-  reflect.rs       # +2 trait methods (dynamic-feature-gated)
-  dynamic/
-    mod.rs         # public types: DynamicMessage, Value, MapKey, errors
-    storage.rs     # internal: slot vec, oneof_active, unknown_fields
-    encode.rs      # compute_size + write_to dispatch
-    decode.rs      # merge_from_slice loop + per-Kind decode
-    value.rs       # Value/MapKey impls (PartialEq, From, accessors)
-    accessors.rs   # get/set/has/clear surface
-    defaults.rs    # default-value synthesis (proto2 default_value parsing)
-```
-
-`dynamic/` mirrors prost-reflect's split. Each file is small and focused.
-
----
-
-## 9. Cycles, recursion, depth limits
-
-- **Cyclic message types** (e.g., `message Node { Node child = 1; }`) work — `Value::Message(DynamicMessage)` heap-allocates inside the parent's `Vec`. There's no compile-time issue and no recursive-allocation issue at construction (the user can build arbitrarily deep nesting; we don't pre-populate sub-messages).
-- **Decode recursion**: capped at `RECURSION_LIMIT` (100), same default as buffa. Configurable via `decode_with_options(descriptor, bytes, DecodeOptions::new().with_recursion_limit(N))`. This guards against malicious deeply-nested inputs.
-- **Encode recursion**: not capped. The user constructed the tree, so we trust them; if you build a 10000-level tree and OOM, that's the cost. (We could add a soft cap; not in Phase 2a.)
-- **`Drop` recursion**: a deeply-nested `DynamicMessage` drops its children recursively. For pathological inputs (10⁵+ levels), this could stack-overflow. Mitigation: same as Vec/Box — for ordinary protos this is irrelevant. If a real workload exposes it, switch to an iterative `Drop`.
-
----
-
-## 10. Testing & acceptance
-
-Unit tests live in `crates/buffa-reflect/src/dynamic/*.rs` (`#[cfg(test)] mod tests`). Integration tests under `crates/buffa-reflect/tests/dynamic.rs`.
-
-Acceptance bar:
-
-- **Byte-equivalence round-trip**: for the equivalence fixtures (already covers all scalars, maps, oneofs, synthetic oneofs, nested + doubly-nested, cross-file imports), `DynamicMessage::decode(d, bytes).encode_to_vec() == bytes` for every populated field combination produced by:
-  - empty,
-  - one of each scalar type,
-  - the oneof in each of its arms,
-  - the synthetic-oneof set and unset,
-  - a non-empty repeated and non-empty map,
-  - a nested message at depth 1, 2, 3.
-- **Set/get round-trip**: for each kind, set a value then read it back; `get == set`.
-- **Type-mismatch rejection**: `set_field_by_name("count", Value::String("x".into()))` returns `SetFieldError::TypeMismatch` (not panic).
-- **Unknown-field preservation**: decode with extra wire data not in the descriptor; encode; observe extra bytes are still present.
-- **Recursion-limit enforcement**: a hand-crafted 200-level nested wire input fails with `RecursionLimitExceeded` at default depth, succeeds at `with_recursion_limit(300)`.
-- **`transcode_to_dynamic` round-trip**: for every fixture in the equivalence suite, `typed.encode_to_vec() == typed.transcode_to_dynamic().encode_to_vec()`.
-- **`from_dynamic` round-trip**: `User::from_dynamic(&user.transcode_to_dynamic())? == user`.
-- **Send + Sync**: the existing `const _:` assertion in `pool.rs` extended to cover `DynamicMessage`.
-- **`cargo test --workspace --no-default-features --features=derive` clean** — proves `dynamic` is a clean opt-out.
-
----
-
-## 11. Performance characteristics
-
-These are **expected**, not measured (benchmarks deferred to a separate spec):
+Expected (benchmarks in a follow-up):
 
 | Operation | Complexity | Notes |
 | --- | --- | --- |
-| `new(descriptor)` | O(N) allocation where N = number of fields | Pre-sized `Vec<Option<Value>>` |
-| `get_field_by_name` | O(1) name → field lookup + O(1) slot read | Two HashMap probes via `MessageEntry::by_name` then direct array access |
-| `set_field` | O(1) for scalar, O(1) for message | + oneof clear cost (O(1)) when applicable |
-| `decode` | O(B) where B = wire bytes | Each field number lookup is O(1); recursion adds nothing beyond per-tag work |
-| `encode` | 2× O(B) due to two-pass (size then write) | Standard buffa pattern; SizeCache amortizes |
-| `clone` | O(N + total payload) | Vec clone + per-Value clone; `Bytes` clones are O(1) refcount bumps |
+| `new(descriptor)` | O(1) | empty `BTreeMap` |
+| `get_field_by_name` / `_by_number` | O(log N) for the lookup + O(1) on the descriptor side | descriptor's `by_name` / `by_number` are O(1) HashMaps; the BTreeMap probe is O(log N) where N = populated field count |
+| `set_field` (release build) | O(log N) BTreeMap insert | validation is `debug_assert` — no cost in release |
+| `decode` | O(B) where B = wire bytes | descriptor field lookups O(1); BTreeMap inserts O(log N); recursion adds nothing beyond per-tag work |
+| `encode` | O(N + B) for two passes | `encoded_len` walks once; `encode` walks once |
+| `clone` | O(N + total payload) | BTreeMap clone + per-Value clone; `Bytes` clones are O(1) refcount bumps |
 
-prost-reflect benchmarks at roughly **2–3×** the cost of typed encode/decode for representative messages. We expect parity since the algorithms are structurally identical and we share buffa's primitives.
+prost-reflect benchmarks at ~2–3× typed encode/decode cost. We expect parity since the algorithms are structurally identical and we share buffa's primitives.
 
 ---
 
-## 12. Interaction with Phase 1
+## 13. Testing & acceptance
+
+Unit tests in `crates/buffa-reflect/src/dynamic/*.rs` (`#[cfg(test)] mod tests`). Integration tests under `crates/buffa-reflect/tests/dynamic.rs`.
+
+Acceptance bar:
+
+- **Byte-equivalence round-trip** on every fixture in `examples/equivalence/proto/`: `buffa_typed.encode_to_vec() == DynamicMessage::decode(d, buffa_typed.encode_to_vec()).encode_to_vec()`.
+- **`set` / `get` round-trip** for every `Kind`.
+- **`try_set_field` rejection** for a string-into-int32 attempt (returns `SetFieldError::InvalidType` without panicking).
+- **Unknown-field preservation**: decode with extra wire data; encode; bytes are still present, interleaved at the right field-number position.
+- **Recursion-limit enforcement** — hand-crafted 200-deep wire input fails at default depth, succeeds at `with_recursion_limit(300)`.
+- **`transcode_to_dynamic` round-trip** — for every typed fixture, `typed.encode_to_vec() == typed.transcode_to_dynamic().encode_to_vec()`.
+- **`DynamicMessage::transcode_to::<User>()` round-trip** — `dyn.transcode_to::<User>()? == user_typed`.
+- **`DynamicMessage as ReflectMessage`** — `dyn.transcode_to_dynamic() ≡ dyn.clone()` (verifies the specialisation); `dyn.descriptor() == d`.
+- **`Send + Sync`** — extend the existing `const _:` assertion in `pool.rs` to cover `DynamicMessage`.
+- **Feature opt-out** — `cargo test --workspace --no-default-features --features=derive` clean.
+- **Conformance** — target **100 % pass rate** on the protobuf binary-format conformance suite. (`vendors/prost-reflect/prost-reflect-conformance-tests/failure_list.txt` is empty in prost-reflect — they pass everything. We aim for the same.)
+
+---
+
+## 14. Interaction with Phase 1
 
 - **Backward compatible.** All Phase 1 APIs unchanged.
-- **`DescriptorPool::add_file_descriptor_set` and `Arc::make_mut`**: a `DynamicMessage` constructed against a pool clone retains its own pool snapshot through the cheap `Arc` clone. If the parent pool is later mutated via `add_file_descriptor_set`, the dynamic message keeps pointing at the snapshot it was built against — no dangling, but also no auto-discovery of newly-added types. Documented.
-- **`MessageDescriptor::default_dynamic()` factory** added (so `descriptor.default_dynamic() == DynamicMessage::new(descriptor)`). Convenience only.
+- **Phase 1 amend** for default-value parsing: `FieldEntry` gains a `default: Value` field; `pool_build.rs` parses `FieldDescriptorProto::default_value` once at pool-build time (eager, not lazy). New variant `DescriptorError::InvalidDefaultValue { field, value, message }`. ~150 LOC, isolated; documented as an additive change in the Phase 1 design.
+- **`MessageDescriptor::default_dynamic()` factory** — convenience method; `descriptor.default_dynamic() == DynamicMessage::new(descriptor)`.
+- **Pool snapshot semantics** unchanged — a `DynamicMessage` constructed against a pool clone retains its `Arc` snapshot; mutations via `add_file_descriptor_set` on a clone never affect the dynamic message's view.
 
 ---
 
-## 13. Risks & mitigations (design-time)
+## 15. Decisions revised after the audit
 
-| Risk | Mitigation |
-| --- | --- |
-| Wire encode produces bytes in a different field-tag order than buffa's typed encoder, breaking interop tests. | Iterate fields in declaration (`proto_field_index`) order verbatim. Test against fixtures generated by both buffa typed code and `protoc --encode`. |
-| `Value::Message(DynamicMessage)` makes `Value` huge (recursive enum carries another `Vec` etc.). | Acceptable for clarity; the enum itself is the size of its largest variant (`Value::Message ≈ 64 bytes`). For cache pressure, the dominant allocation is the inner message's `slots`, not the enum tag. If profiling reveals a problem, box the `Message` variant. |
-| `set_field` sub-message cross-pool validation: a `Value::Message(other)` from a different `DescriptorPool` refers to descriptors not in `self`'s pool. | Compare by `Arc::ptr_eq` on the inner pool. Mismatch → `SetFieldError::TypeMismatch`. (Permissive cross-pool transcoding can come later as an explicit method.) |
-| Map encoding ordering is non-deterministic across runs unless the underlying map is sorted. | Use `BTreeMap` for `Value::Map` so iteration is in key-sort order. Wire conformance does not require this, but tests and JSON output benefit. |
-| Default values for proto2 (`default_value = "..."`) require parsing the descriptor's string field. | Parse lazily on `get_field` for unset proto2 fields with explicit defaults; cache the parsed `Value` per `FieldDescriptor` via a `OnceLock` in `FieldEntry` (next phase, not 2a). For 2a: parse on every read; unconditionally returns the documented default. |
-| `Bytes` field encoding: buffa generates `Vec<u8>` by default and `Bytes` only via `use_bytes_type_in`. We always store `Value::Bytes(Bytes)`. | `Bytes::from(vec)` is O(1). Encoding is O(N) write either way. No issue. |
+For the spec-archaeology trail:
+
+1. **Storage**: `Vec<Option<Value>>` → `BTreeMap<u32, ValueOrUnknown>`. Driving reason: needed a single iteration order over interleaved known and unknown fields. (§2)
+2. **Mutation API**: Result-only → dual `set_field` (debug-assert) / `try_set_field` (Result). Driving reason: ergonomic + zero-cost in release. (§5)
+3. **Iteration**: single `populated_fields()` → `iter_with_options(include_default, index_order)`. Driving reason: textproto needs declaration order; JSON needs default-omitted; canonical wire wants number order. (§6)
+4. **Default values**: lazy parse on get → eager parse at pool-build time. Driving reason: report invalid defaults as pool errors, not surprise crashes at first read. (§2 last paragraph)
+5. **`ReflectMessage` symmetric extension**: `from_dynamic` on the trait → `transcode_to`/`transcode_from` on `DynamicMessage`. Driving reason: typed-target methods belong on the dynamic side; only typed-source belongs on the trait. (§8)
+6. **Conformance target**: ~95 % → 100 %. Driving reason: prost-reflect already achieves this on the binary-format suite; lower bar is unjustified.
+7. **`FieldDescriptorLike` trait** added so the storage layer doesn't need to be re-implemented for extensions in a future phase. (§2)
+8. **`Value::is_valid_for_field`** added as a public method. The recursive validation logic was missing from the earlier draft. (§7)
 
 ---
 
-## 14. Out of scope, captured for follow-ups
+## 16. Out of scope, captured for follow-ups
 
-- **`DynamicMessage::merge`** — merging two dynamics with the same descriptor (proto's "merge" semantics). Phase 2a ships only "merge from wire bytes." A pure-Rust merge variant is the next-step convenience.
-- **`Value::try_into_*` / `From` impls in both directions** — accessors get tedious without sugar. Phase 2a provides the manual `match` API; sugar via macros is a small follow-up.
-- **`DynamicMessage::clear_all()`** — clearing every populated field (preserving descriptor). Trivial; ship if needed.
-- **`Reflect` derive on view types** — see Phase 2e.
-- **JSON / textproto** — see Phases 2b and 2c.
+- **`DynamicMessage::merge` from another `DynamicMessage`** (pure-Rust merge without re-encoding) — convenience.
+- **Extension reading via `FieldDescriptorLike`** — the trait is plumbed but only `FieldDescriptor` implements it for Phase 2a. Adding `ExtensionDescriptor` is purely additive.
+- **`Value::try_into_*` / `From` macros** — accessor sugar; deferred.
+- **`DynamicMessage::clear_all()` / `Default` impl on DynamicMessage** — trivial follow-ups; not required for Phase 2a.
+- **JSON / textproto** — separate specs, depend on this one.
+- **gRPC reflection** — Phase 2d, depends only on Phase 1.
+- **View reflection** — Phase 2e, depends only on Phase 1.
