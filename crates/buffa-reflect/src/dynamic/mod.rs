@@ -32,6 +32,11 @@ mod message_decode;
 mod unknown;
 mod value;
 
+#[cfg(feature = "serde")]
+pub mod serde;
+
+#[cfg(feature = "serde")]
+pub use crate::dynamic::serde::{DeserializeOptions, SerializeOptions};
 pub use crate::dynamic::{
     message::DynamicMessage,
     unknown::{UnknownField, UnknownFieldSet},

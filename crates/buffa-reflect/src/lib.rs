@@ -46,6 +46,8 @@ pub mod dynamic;
 #[cfg(feature = "derive")]
 pub use buffa_reflect_derive::ReflectMessage;
 
+#[cfg(feature = "serde")]
+pub use crate::dynamic::{DeserializeOptions, SerializeOptions};
 #[cfg(feature = "dynamic")]
 pub use crate::dynamic::{
     DynamicMessage, MapKey, SetFieldError, UnknownField, UnknownFieldSet, Value,
