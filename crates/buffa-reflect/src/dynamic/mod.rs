@@ -34,9 +34,13 @@ mod value;
 
 #[cfg(feature = "serde")]
 pub mod serde;
+#[cfg(feature = "text-format")]
+pub mod text_format;
 
 #[cfg(feature = "serde")]
 pub use crate::dynamic::serde::{DeserializeOptions, SerializeOptions};
+#[cfg(feature = "text-format")]
+pub use crate::dynamic::text_format::{FormatOptions, ParseError, ParseErrorKind};
 pub use crate::dynamic::{
     message::DynamicMessage,
     unknown::{UnknownField, UnknownFieldSet},

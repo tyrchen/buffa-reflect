@@ -52,6 +52,8 @@ pub use crate::dynamic::{DeserializeOptions, SerializeOptions};
 pub use crate::dynamic::{
     DynamicMessage, MapKey, SetFieldError, UnknownField, UnknownFieldSet, Value,
 };
+#[cfg(feature = "text-format")]
+pub use crate::dynamic::{FormatOptions, ParseError, ParseErrorKind};
 pub use crate::{
     enumeration::{EnumDescriptor, EnumValueDescriptor},
     error::DescriptorError,
