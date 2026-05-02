@@ -11,9 +11,34 @@ homepage.workspace = true
 readme.workspace = true
 publish = false
 
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "buffa-reflect-example"
+path = "src/main.rs"
+
+[[example]]
+name = "dynamic_message"
+path = "examples/dynamic_message.rs"
+
+[[example]]
+name = "json"
+path = "examples/json.rs"
+
+[[example]]
+name = "text_format"
+path = "examples/text_format.rs"
+
+[[example]]
+name = "view_reflection"
+path = "examples/view_reflection.rs"
+
 [dependencies]
 buffa.workspace = true
-buffa-reflect.workspace = true
+buffa-reflect = { workspace = true, features = ["serde", "text-format"] }
+serde.workspace = true
+serde_json.workspace = true
 
 [build-dependencies]
 buffa-reflect-build.workspace = true

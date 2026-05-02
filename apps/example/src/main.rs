@@ -1,33 +1,12 @@
 //! End-to-end demo: walk a buffa-generated message tree by descriptor.
 //!
-//! Generated buffa code carries no docstrings, so we silence
-//! `missing_docs` for the included module tree only — every other public
-//! item in this binary still requires a doc comment.
+//! For Phase 2 demos (DynamicMessage, JSON, textproto, view reflection)
+//! see `cargo run --example <name> -p buffa-reflect-example`.
 
-#![allow(
-    missing_docs,
-    non_camel_case_types,
-    clippy::derivable_impls,
-    clippy::doc_lazy_continuation,
-    clippy::module_inception,
-    clippy::uninlined_format_args,
-    reason = "buffa codegen preserves protobuf names verbatim (e.g. SCREAMING_SNAKE enum \
-              variants) and emits straightforward impls; the lint set is tuned for hand-written \
-              code, not generated code."
-)]
-
-use buffa_reflect::{Kind, ReflectMessage, ReflectMessageView};
-
-/// Embedded descriptor-set bytes, populated by `buffa-reflect-build`.
-pub const FILE_DESCRIPTOR_SET_BYTES: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/file_descriptor_set.bin"));
-
-buffa::include_proto!("acme.api.v1");
-
-include!(concat!(env!("OUT_DIR"), "/_reflect_views.rs"));
+use buffa_reflect::{Kind, MessageDescriptor, ReflectMessage, ReflectMessageView};
+use buffa_reflect_example::{Genre, Library, library};
 
 fn main() {
-    // Construct a deeply-nested generated message.
     let book = library::Book {
         id: "b-001".to_string(),
         title: "Pride and Prejudice".to_string(),
@@ -40,44 +19,34 @@ fn main() {
         }],
         ..Default::default()
     };
-
-    // Top-level reflection over the nested type.
     print_descriptor("Book", book.descriptor());
 
-    // Top-level message at the package root.
-    let library = Library {
+    let library_msg = Library {
         name: "Bath Public Library".to_string(),
         books: vec![book],
         ..Default::default()
     };
-    print_descriptor("Library", library.descriptor());
+    print_descriptor("Library", library_msg.descriptor());
 
-    // Nested-nested type.
-    let excerpt = library::book::Excerpt::default();
-    print_descriptor("Excerpt", excerpt.descriptor());
+    print_descriptor("Excerpt", library::book::Excerpt::default().descriptor());
 
-    // View-type reflection: decode the library message as a view and
-    // walk its descriptor without ever owning the data.
-    let bytes = ::buffa::Message::encode_to_vec(&library);
-    let view: __buffa::view::LibraryView<'_> = ::buffa::DecodeOptions::new()
+    let bytes = ::buffa::Message::encode_to_vec(&library_msg);
+    let view: buffa_reflect_example::__buffa::view::LibraryView<'_> = ::buffa::DecodeOptions::new()
         .decode_view(bytes.as_slice())
         .expect("library decodes as view");
     let view_descriptor = view.descriptor();
     println!("== Library (via view): {} ==", view_descriptor.full_name());
-    // Both descriptors describe the same proto message; they may live
-    // in distinct pool clones (one per static OnceLock site) but their
-    // FQNs and field counts are identical.
     assert_eq!(
         view_descriptor.full_name(),
-        library.descriptor().full_name()
+        library_msg.descriptor().full_name()
     );
     assert_eq!(
         view_descriptor.fields().count(),
-        library.descriptor().fields().count()
+        library_msg.descriptor().fields().count()
     );
 }
 
-fn print_descriptor(label: &str, descriptor: buffa_reflect::MessageDescriptor) {
+fn print_descriptor(label: &str, descriptor: MessageDescriptor) {
     println!("== {label}: {} ==", descriptor.full_name());
     for field in descriptor.fields() {
         let kind_repr = match field.kind() {
