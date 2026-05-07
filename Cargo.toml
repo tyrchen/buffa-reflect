@@ -3,7 +3,7 @@ members = ["crates/*", "apps/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Tyr Chen <tyr.chen@gmail.com>"]
 edition = "2024"
 license = "MIT"
@@ -14,7 +14,7 @@ readme = "README.md"
 
 [workspace.dependencies]
 # external
-anyhow = "1.0.98"
+anyhow = "1.0.102"
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["alloc"] }
 hashbrown = { version = "0.17", default-features = false, features = [
@@ -28,17 +28,17 @@ serde-value = "0.7"
 serde_json = "1"
 syn = { version = "2", features = ["full"] }
 tempfile = "3"
-thiserror = "2.0.12"
-tokio = { version = "1.47.1", features = ["rt", "rt-multi-thread", "macros"] }
+thiserror = "2.0.18"
+tokio = { version = "1.52.2", features = ["rt", "rt-multi-thread", "macros"] }
 tokio-stream = "0.1"
 trybuild = "1"
 
 # buffa from crates.io (vendors/ is reference-only)
-buffa = { version = "0.4", default-features = false, features = ["std"] }
-buffa-build = { version = "0.4" }
-buffa-descriptor = { version = "0.4" }
+buffa = { version = "0.5", default-features = false, features = ["std"] }
+buffa-build = { version = "0.5" }
+buffa-descriptor = { version = "0.5" }
 
 # this workspace
-buffa-reflect = { version = "0.1.0", path = "crates/buffa-reflect" }
-buffa-reflect-build = { version = "0.1.0", path = "crates/buffa-reflect-build" }
-buffa-reflect-derive = { version = "0.1.0", path = "crates/buffa-reflect-derive" }
+buffa-reflect = { version = "0.2.0", path = "crates/buffa-reflect" }
+buffa-reflect-build = { version = "0.2.0", path = "crates/buffa-reflect-build" }
+buffa-reflect-derive = { version = "0.2.0", path = "crates/buffa-reflect-derive" }
