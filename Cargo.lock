@@ -92,7 +92,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-reflect"
-version = "0.2.0"
+version = "0.9.2"
 dependencies = [
  "base64",
  "buffa",
@@ -109,7 +109,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-reflect-build"
-version = "0.2.0"
+version = "0.9.2"
 dependencies = [
  "buffa",
  "buffa-build",
@@ -121,7 +121,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-reflect-derive"
-version = "0.2.0"
+version = "0.9.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -131,7 +131,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-reflect-example"
-version = "0.2.0"
+version = "0.9.2"
 dependencies = [
  "buffa",
  "buffa-reflect",
