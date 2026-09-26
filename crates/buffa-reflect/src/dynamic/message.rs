@@ -1,10 +1,10 @@
 //! [`DynamicMessage`] — a runtime-typed message backed by a
 //! [`MessageDescriptor`].
 
-use std::borrow::Cow;
+use std::{borrow::Cow, cell::Cell};
 
 use buffa::{
-    DecodeError, EncodeError,
+    DecodeContext, DecodeError, EncodeError,
     bytes::{Buf, BufMut, Bytes, BytesMut},
 };
 
@@ -75,7 +75,11 @@ impl DynamicMessage {
     /// See [`DecodeError`].
     pub fn decode<B: Buf>(desc: MessageDescriptor, mut buf: B) -> Result<Self, DecodeError> {
         let mut msg = Self::new(desc);
-        message_decode::merge(&mut msg, &mut buf, buffa::RECURSION_LIMIT)?;
+        // Fresh unknown-field allowance per top-level decode, as
+        // buffa's `DecodeContext` docs require.
+        let unknown_limit = Cell::new(buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let ctx = DecodeContext::new(buffa::RECURSION_LIMIT, &unknown_limit);
+        message_decode::merge(&mut msg, &mut buf, ctx)?;
         Ok(msg)
     }
 
@@ -92,7 +96,12 @@ impl DynamicMessage {
             return Err(DecodeError::MessageTooLarge);
         }
         let mut msg = Self::new(desc);
-        message_decode::merge(&mut msg, &mut buf, opts.recursion_limit())?;
+        // Fresh per-decode allowance cells, honoring the caller's limits.
+        let unknown_limit = Cell::new(opts.unknown_field_limit());
+        let element_limit = Cell::new(opts.element_memory_limit());
+        let ctx = DecodeContext::new(opts.recursion_limit(), &unknown_limit)
+            .with_element_memory(&element_limit);
+        message_decode::merge(&mut msg, &mut buf, ctx)?;
         Ok(msg)
     }
 
@@ -102,7 +111,9 @@ impl DynamicMessage {
     /// # Errors
     /// See [`DecodeError`].
     pub fn merge<B: Buf>(&mut self, mut buf: B) -> Result<(), DecodeError> {
-        message_decode::merge(self, &mut buf, buffa::RECURSION_LIMIT)
+        let unknown_limit = Cell::new(buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let ctx = DecodeContext::new(buffa::RECURSION_LIMIT, &unknown_limit);
+        message_decode::merge(self, &mut buf, ctx)
     }
 
     // ── encode ──────────────────────────────────────────────────────────

@@ -29,12 +29,12 @@ impl Message for User {
     fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
         0
     }
-    fn write_to(&self, _cache: &mut SizeCache, _buf: &mut impl ::buffa::bytes::BufMut) {}
+    fn write_to(&self, _cache: &mut SizeCache, _buf: &mut impl ::buffa::EncodeSink) {}
     fn merge_field(
         &mut self,
         tag: Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        _depth: u32,
+        _ctx: ::buffa::DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
         ::buffa::encoding::skip_field(tag, buf)
     }
@@ -62,12 +62,12 @@ impl Message for UserBytesForm {
     fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
         0
     }
-    fn write_to(&self, _cache: &mut SizeCache, _buf: &mut impl ::buffa::bytes::BufMut) {}
+    fn write_to(&self, _cache: &mut SizeCache, _buf: &mut impl ::buffa::EncodeSink) {}
     fn merge_field(
         &mut self,
         tag: Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        _depth: u32,
+        _ctx: ::buffa::DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
         ::buffa::encoding::skip_field(tag, buf)
     }
@@ -95,12 +95,12 @@ impl Message for UserPoolForm {
     fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
         0
     }
-    fn write_to(&self, _cache: &mut SizeCache, _buf: &mut impl ::buffa::bytes::BufMut) {}
+    fn write_to(&self, _cache: &mut SizeCache, _buf: &mut impl ::buffa::EncodeSink) {}
     fn merge_field(
         &mut self,
         tag: Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        _depth: u32,
+        _ctx: ::buffa::DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
         ::buffa::encoding::skip_field(tag, buf)
     }
@@ -131,12 +131,12 @@ impl Message for Profile {
     fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
         0
     }
-    fn write_to(&self, _cache: &mut SizeCache, _buf: &mut impl ::buffa::bytes::BufMut) {}
+    fn write_to(&self, _cache: &mut SizeCache, _buf: &mut impl ::buffa::EncodeSink) {}
     fn merge_field(
         &mut self,
         tag: Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        _depth: u32,
+        _ctx: ::buffa::DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
         ::buffa::encoding::skip_field(tag, buf)
     }

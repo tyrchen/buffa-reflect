@@ -537,3 +537,53 @@ fn test_dynamic_message_should_implement_reflect_message() {
     }
     assert_eq!(require_reflect(&m), d);
 }
+
+#[test]
+fn test_element_memory_limit_should_reject_repeated_amplification() {
+    use buffa::{DecodeError, DecodeOptions};
+
+    let d = user_descriptor();
+    let mut m = DynamicMessage::new(d.clone());
+    m.set_field_by_name("scores", Value::List((0..16).map(Value::from).collect()));
+    let bytes = m.encode_to_vec();
+
+    // 16 packed varints decode into 16 `Value` slots; a budget that fits
+    // fewer must fail instead of silently over-allocating.
+    let tight = DecodeOptions::new().with_element_memory_limit(std::mem::size_of::<Value>() * 4);
+    let err = DynamicMessage::decode_with_options(d.clone(), bytes.as_slice(), tight)
+        .expect_err("element budget must be enforced");
+    assert!(matches!(err, DecodeError::ElementMemoryLimitExceeded));
+
+    // A generous budget decodes fine.
+    let loose = DecodeOptions::new().with_element_memory_limit(std::mem::size_of::<Value>() * 64);
+    let m2 = DynamicMessage::decode_with_options(d, bytes.as_slice(), loose).unwrap();
+    assert_eq!(m, m2);
+}
+
+#[test]
+fn test_element_memory_limit_should_reject_map_amplification() {
+    use std::collections::HashMap;
+
+    use buffa::{DecodeError, DecodeOptions};
+
+    let d = user_descriptor();
+    let mut m = DynamicMessage::new(d.clone());
+    let mut map = HashMap::new();
+    for i in 0..8 {
+        map.insert(
+            MapKey::String(format!("k{i}")),
+            Value::String(format!("v{i}")),
+        );
+    }
+    m.set_field_by_name("tags", Value::Map(map));
+    let bytes = m.encode_to_vec();
+
+    let tight = DecodeOptions::new().with_element_memory_limit(1);
+    let err = DynamicMessage::decode_with_options(d.clone(), bytes.as_slice(), tight)
+        .expect_err("element budget must be enforced");
+    assert!(matches!(err, DecodeError::ElementMemoryLimitExceeded));
+
+    let loose = DecodeOptions::new().with_element_memory_limit(usize::MAX);
+    let m2 = DynamicMessage::decode_with_options(d, bytes.as_slice(), loose).unwrap();
+    assert_eq!(m, m2);
+}
