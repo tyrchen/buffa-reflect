@@ -126,12 +126,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "buffa"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a92f2f5df67a9d5ccfc65237bfc954c56328aee40a04a9b92381ecba370be246"
+dependencies = [
+ "bytes",
+ "foldhash 0.1.5",
+ "hashbrown 0.15.5",
+ "once_cell",
+ "rustversion",
+ "serde",
+ "serde_json",
+ "smoothutf8",
+ "thiserror",
+]
+
+[[package]]
 name = "buffa-descriptor"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8473359a7a8cbad218bd2f0aa635d59a51b9a5dc2de3e50b125679dd411371a2"
 dependencies = [
- "buffa",
+ "buffa 0.4.0",
+]
+
+[[package]]
+name = "buffa-descriptor"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b7dd79a6898e70dac8adae959c8ad2cae51ed96397935c91c996280cedcb55e"
+dependencies = [
+ "buffa 0.9.2",
+ "rustversion",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -139,8 +168,8 @@ name = "buffa-grpc-reflection"
 version = "0.1.0"
 dependencies = [
  "async-stream",
- "buffa",
- "buffa-descriptor",
+ "buffa 0.9.2",
+ "buffa-descriptor 0.4.0",
  "buffa-reflect",
  "prost",
  "tokio",
@@ -153,10 +182,10 @@ dependencies = [
 
 [[package]]
 name = "buffa-reflect"
-version = "0.1.0"
+version = "0.9.2"
 dependencies = [
- "buffa",
- "buffa-descriptor",
+ "buffa 0.9.2",
+ "buffa-descriptor 0.9.2",
  "buffa-reflect-derive",
  "hashbrown 0.17.0",
  "thiserror",
@@ -164,7 +193,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-reflect-derive"
-version = "0.1.0"
+version = "0.9.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -721,6 +750,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustversion"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
+
+[[package]]
 name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -733,6 +768,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
+ "serde_derive",
 ]
 
 [[package]]
@@ -769,6 +805,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "simdutf8"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
+
+[[package]]
 name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -779,6 +821,15 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+
+[[package]]
+name = "smoothutf8"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b4ec95892483d6d94284caccfddb9b77111a4dcac33ed25d624248def0fa5f1"
+dependencies = [
+ "simdutf8",
+]
 
 [[package]]
 name = "socket2"

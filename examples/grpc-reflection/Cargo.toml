@@ -10,7 +10,7 @@ publish = false
 [workspace]
 
 [dependencies]
-buffa = "0.4"
+buffa = "0.9"
 buffa-reflect = { path = "../../crates/buffa-reflect" }
 buffa-descriptor = "0.4"
 prost = "0.14"
