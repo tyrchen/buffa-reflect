@@ -34,9 +34,9 @@ tokio-stream = "0.1"
 trybuild = "1"
 
 # buffa from crates.io (vendors/ is reference-only)
-buffa = { version = "0.5", default-features = false, features = ["std"] }
-buffa-build = { version = "0.5" }
-buffa-descriptor = { version = "0.5" }
+buffa = { version = "0.9", default-features = false, features = ["std"] }
+buffa-build = { version = "0.9" }
+buffa-descriptor = { version = "0.9" }
 
 # this workspace
 buffa-reflect = { version = "0.2.0", path = "crates/buffa-reflect" }

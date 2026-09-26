@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use buffa::{
-    DecodeError,
+    DecodeContext, DecodeError,
     bytes::{Buf, Bytes},
     encoding::{Tag, WireType, decode_unknown_field, decode_varint},
 };
@@ -17,23 +17,25 @@ use crate::{
 };
 
 /// Top-level merge entry. Iterates `(tag, payload)` pairs and
-/// dispatches per field. `depth` is the remaining recursion budget;
-/// it is **not** decremented here — the only decrement happens when
-/// entering a sub-message (`read_singular` for `Kind::Message`),
-/// matching buffa's typed `merge_length_delimited`.
+/// dispatches per field. `ctx` carries the remaining recursion budget
+/// and the shared unknown-field allowance; it is **not** decremented
+/// here — the only decrement happens when entering a sub-message
+/// (`read_singular` for `Kind::Message`), matching buffa's typed
+/// `merge_length_delimited`. Construct a fresh [`DecodeContext`] per
+/// top-level decode at the call site.
 pub(super) fn merge<B: Buf>(
     msg: &mut DynamicMessage,
     buf: &mut B,
-    depth: u32,
+    ctx: DecodeContext<'_>,
 ) -> Result<(), DecodeError> {
     while buf.has_remaining() {
         let tag = Tag::decode(buf)?;
         let number = tag.field_number();
         let wire = tag.wire_type();
         match msg.descriptor().get_field_by_number(number) {
-            Some(field) => merge_field(msg, &field, wire, buf, depth)?,
+            Some(field) => merge_field(msg, &field, wire, buf, ctx)?,
             None => {
-                let unknown = decode_unknown_field(tag, buf, depth)?;
+                let unknown = decode_unknown_field(tag, buf, ctx)?;
                 msg.fields_set_mut().add_unknown(number, unknown);
             }
         }
@@ -46,15 +48,15 @@ fn merge_field<B: Buf>(
     field: &FieldDescriptor,
     wire: WireType,
     buf: &mut B,
-    depth: u32,
+    ctx: DecodeContext<'_>,
 ) -> Result<(), DecodeError> {
     if field.is_map() {
-        return merge_map_entry(msg, field, wire, buf, depth);
+        return merge_map_entry(msg, field, wire, buf, ctx);
     }
     if field.is_list() {
-        return merge_list(msg, field, wire, buf, depth);
+        return merge_list(msg, field, wire, buf, ctx);
     }
-    let v = read_singular(&field.kind(), wire, buf, depth)?;
+    let v = read_singular(&field.kind(), wire, buf, ctx)?;
     msg.set_field(field, v);
     Ok(())
 }
@@ -64,7 +66,7 @@ fn merge_list<B: Buf>(
     field: &FieldDescriptor,
     wire: WireType,
     buf: &mut B,
-    depth: u32,
+    ctx: DecodeContext<'_>,
 ) -> Result<(), DecodeError> {
     let kind = field.kind();
     // Packed body = LengthDelimited where the field's natural wire
@@ -79,7 +81,7 @@ fn merge_list<B: Buf>(
         let limit = buf.remaining() - len;
         ensure_list_slot(msg, field);
         while buf.remaining() > limit {
-            let v = read_singular(&kind, wire_type_for(&kind), buf, depth)?;
+            let v = read_singular(&kind, wire_type_for(&kind), buf, ctx)?;
             push_list_item(msg, field, v);
         }
         if buf.remaining() != limit {
@@ -88,7 +90,7 @@ fn merge_list<B: Buf>(
         return Ok(());
     }
 
-    let v = read_singular(&kind, wire, buf, depth)?;
+    let v = read_singular(&kind, wire, buf, ctx)?;
     ensure_list_slot(msg, field);
     push_list_item(msg, field, v);
     Ok(())
@@ -113,7 +115,7 @@ fn merge_map_entry<B: Buf>(
     field: &FieldDescriptor,
     wire: WireType,
     buf: &mut B,
-    depth: u32,
+    ctx: DecodeContext<'_>,
 ) -> Result<(), DecodeError> {
     if wire != WireType::LengthDelimited {
         return Err(DecodeError::InvalidWireType(wire as u8 as u32));
@@ -144,9 +146,9 @@ fn merge_map_entry<B: Buf>(
         let inner_tag = Tag::decode(buf)?;
         let inner_wire = inner_tag.wire_type();
         match inner_tag.field_number() {
-            1 => key = Some(read_singular(&key_kind, inner_wire, buf, depth)?),
-            2 => value = Some(read_singular(&value_kind, inner_wire, buf, depth)?),
-            _ => buffa::encoding::skip_field_depth(inner_tag, buf, depth)?,
+            1 => key = Some(read_singular(&key_kind, inner_wire, buf, ctx)?),
+            2 => value = Some(read_singular(&value_kind, inner_wire, buf, ctx)?),
+            _ => buffa::encoding::skip_field_depth(inner_tag, buf, ctx.depth())?,
         }
     }
     if buf.remaining() != limit {
@@ -188,7 +190,7 @@ fn read_singular<B: Buf>(
     kind: &Kind,
     wire: WireType,
     buf: &mut B,
-    depth: u32,
+    ctx: DecodeContext<'_>,
 ) -> Result<Value, DecodeError> {
     match (kind, wire) {
         (Kind::Bool, WireType::Varint) => Ok(Value::Bool(decode_varint(buf)? != 0)),
@@ -247,18 +249,16 @@ fn read_singular<B: Buf>(
             }
             let limit = buf.remaining() - len;
             let mut inner = DynamicMessage::new(d.clone());
-            // recurse — depth was already decremented at the outer
-            // merge entry.
-            let depth = depth
-                .checked_sub(1)
-                .ok_or(DecodeError::RecursionLimitExceeded)?;
+            // Recurse — consume one level of the context's recursion
+            // budget, matching buffa's typed decoders.
+            let ctx = ctx.descend()?;
             while buf.remaining() > limit {
                 let tag = Tag::decode(buf)?;
                 let wire = tag.wire_type();
                 match d.get_field_by_number(tag.field_number()) {
-                    Some(f) => merge_field(&mut inner, &f, wire, buf, depth)?,
+                    Some(f) => merge_field(&mut inner, &f, wire, buf, ctx)?,
                     None => {
-                        let unknown = decode_unknown_field(tag, buf, depth)?;
+                        let unknown = decode_unknown_field(tag, buf, ctx)?;
                         inner
                             .fields_set_mut()
                             .add_unknown(tag.field_number(), unknown);
