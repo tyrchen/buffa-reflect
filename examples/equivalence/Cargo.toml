@@ -12,7 +12,7 @@ description = "Validates that buffa-reflect parses FileDescriptorSet bytes the s
 [workspace]
 
 [dependencies]
-buffa = "0.4"
+buffa = "0.9"
 buffa-reflect = { path = "../../crates/buffa-reflect" }
 prost = "0.14"
 prost-reflect = "0.16"
