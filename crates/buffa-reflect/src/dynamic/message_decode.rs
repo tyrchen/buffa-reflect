@@ -1,6 +1,6 @@
 //! Wire-format decode dispatch for [`super::DynamicMessage`].
 
-use std::collections::HashMap;
+use std::{collections::HashMap, mem::size_of};
 
 use buffa::{
     DecodeContext, DecodeError,
@@ -82,7 +82,7 @@ fn merge_list<B: Buf>(
         ensure_list_slot(msg, field);
         while buf.remaining() > limit {
             let v = read_singular(&kind, wire_type_for(&kind), buf, ctx)?;
-            push_list_item(msg, field, v);
+            push_list_item(msg, field, v, ctx)?;
         }
         if buf.remaining() != limit {
             return Err(DecodeError::UnexpectedEof);
@@ -92,7 +92,7 @@ fn merge_list<B: Buf>(
 
     let v = read_singular(&kind, wire, buf, ctx)?;
     ensure_list_slot(msg, field);
-    push_list_item(msg, field, v);
+    push_list_item(msg, field, v, ctx)?;
     Ok(())
 }
 
@@ -104,10 +104,20 @@ fn ensure_list_slot(msg: &mut DynamicMessage, field: &FieldDescriptor) {
     }
 }
 
-fn push_list_item(msg: &mut DynamicMessage, field: &FieldDescriptor, item: Value) {
+fn push_list_item(
+    msg: &mut DynamicMessage,
+    field: &FieldDescriptor,
+    item: Value,
+    ctx: DecodeContext<'_>,
+) -> Result<(), DecodeError> {
     if let Some(Value::List(list)) = msg.fields_set_mut().get_value_mut(field.number()) {
+        // A 1-byte varint expands into a whole `Value` slot — charge the
+        // caller's element-memory budget before materializing it. No-op
+        // when no budget is attached to the context.
+        ctx.register_element_memory(size_of::<Value>())?;
         list.push(item);
     }
+    Ok(())
 }
 
 fn merge_map_entry<B: Buf>(
@@ -162,6 +172,9 @@ fn merge_map_entry<B: Buf>(
 
     ensure_map_slot(msg, field);
     if let Some(Value::Map(m)) = msg.fields_set_mut().get_value_mut(field.number()) {
+        // Same amplification concern as repeated fields: charge the
+        // element-memory budget before materializing the entry.
+        ctx.register_element_memory(size_of::<(MapKey, Value)>())?;
         m.insert(mk, value);
     }
     Ok(())
